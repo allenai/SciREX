@@ -2,9 +2,8 @@
 //   Peters, Matthew E. et al. “Deep contextualized word representations.” NAACL-HLT (2018).
 {
   "dataset_reader": {
-    "type": "conll2000",
-    "tag_label": "chunk",
-    "coding_scheme": "BIO",
+    "type": "conll2003",
+    "tag_label": "ner",
     "token_indexers": {
       "tokens": {
         "type": "single_id",
@@ -56,6 +55,6 @@
     "num_epochs": 75,
     "grad_norm": 5.0,
     "patience": 25,
-    "cuda_device": 0
+    "cuda_device": -1
   }
 }
