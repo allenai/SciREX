@@ -13,7 +13,8 @@
           "type": "bert-pretrained",
           "pretrained_model": std.extVar("BERT_VOCAB"),
           "do_lowercase": std.extVar("IS_LOWERCASE"),
-          "use_starting_offsets": true
+          "use_starting_offsets": true,
+          "truncate_long_sequences" : false
       },
       "token_characters": {
         "type": "characters",
