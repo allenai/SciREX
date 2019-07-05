@@ -10,7 +10,7 @@ tqdm.pandas()
 GROBID_OUTPUT_PATH = '../../../beltagy/result_extraction/data/grobid/'
 LATEX_OUTPUT_PATH = 'data/plain_text/'
 PWC_PATH = '../../../beltagy/result_extraction/data/pwc_s2.jsonl'
-PWC_CLEANED_OUTPUT_PATH = 'data/pwc_s2_cleaned_text_v2.jsonl'
+PWC_CLEANED_OUTPUT_PATH = 'data/pwc_s2_cleaned_text_v3.jsonl'
 
 def get_arxiv_id(paper_url) :
     if 'arxiv' in paper_url and 'abs' in paper_url:
@@ -57,13 +57,14 @@ def read_latex_file(arxiv_id) :
         if len(splits) == 2 :
             title, text = splits
             title = clean(title.strip())
-            text = clean(text.strip())
+            text = text.strip()
         else :
-            text = clean(splits[0].strip())
+            text = splits[0].strip()
             title = ''
+        assert '\n\n' not in text
         cleaned_content.append('<title>' + title + '</title>\n' + text + '\n\n')
                 
-    return " ".join(cleaned_content).strip()
+    return "".join(cleaned_content).strip()
 
 def get_cleaned_text_if_available(row) :
     if row['arxiv_id'] is not None :

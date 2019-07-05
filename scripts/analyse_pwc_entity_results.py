@@ -15,6 +15,7 @@ map_available_entity_to_true = {
     'Method' : 'model_name'
 }
 
+from scripts.entity_matching_algorithms import *
 map_true_entity_to_available = {v:k for k, v in map_available_entity_to_true.items()}
 used_entities = map_available_entity_to_true.keys()
 
@@ -35,15 +36,17 @@ def extract_entites_from_document(row) :
         row[enttype] = [x for y in row[enttype] for x in y]
     return row
 
-def load_pwc_sentence_predictions() :
-    pwc_sentences = [json.loads(line) for line in open('data/pwc_s2_cleaned_text_v2_sentences.jsonl')]
+def load_pwc_sentence_predictions(basedir) :
+    pwc_sentences = [json.loads(line) for line in open(basedir + 'data/pwc_s2_cleaned_text_v2_sentences.jsonl')]
 
     pwc_output = []
-    for line in tqdm(open('outputs/pwc_s2_cleaned_text_v2_sentences_predictions.jsonl')) :
+    for line in tqdm(open(basedir + 'outputs/pwc_s2_cleaned_text_v2_sentences_predictions.jsonl')) :
         line = json.loads(line)
         del line['logits']
         del line['mask']
         pwc_output.append(line)
+        
+    print(len(pwc_sentences), len(pwc_output))
 
     for s, t in zip(pwc_sentences, pwc_output) :
         s.update(t)
@@ -55,13 +58,13 @@ def load_pwc_sentence_predictions() :
     
     return pwc_sentences
 
-def load_pwc_full_text() :
-    pwc_df = pd.read_json('data/pwc_s2_cleaned_text_v2.jsonl', lines=True)
+def load_pwc_full_text(basedir) :
+    pwc_df = pd.read_json(basedir + 'data/pwc_s2_cleaned_text_v2.jsonl', lines=True)
     return pwc_df
 
-def get_pwc_data_and_output() :
-    pwc_df = load_pwc_full_text()
-    pwc_sentences = load_pwc_sentence_predictions()
+def get_pwc_data_and_output(basedir) :
+    pwc_df = load_pwc_full_text(basedir)
+    pwc_sentences = load_pwc_sentence_predictions(basedir)
     pwc_sentences = pwc_sentences.groupby(['doc_id'], as_index=False) \
                                  .aggregate(lambda x : tuple(x)) \
                                  .apply(extract_entites_from_document, axis=1)
