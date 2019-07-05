@@ -107,3 +107,6 @@ venv.bak/
 data
 outputs
 Testing.ipynb
+
+notebooks/Testbed*
+.vscode

@@ -1,3 +1,6 @@
+import os
+BASEPATH = os.getenv('RESULT_EXTRACTION_BASEPATH', '.')
+
 import json
 import pandas as pd
 from tqdm import tqdm
@@ -36,11 +39,11 @@ def extract_entites_from_document(row) :
         row[enttype] = [x for y in row[enttype] for x in y]
     return row
 
-def load_pwc_sentence_predictions(basedir) :
-    pwc_sentences = [json.loads(line) for line in open(basedir + 'data/pwc_s2_cleaned_text_v2_sentences.jsonl')]
+def load_pwc_sentence_predictions(pwc_sentence_file:str, pwc_prediction_file:str) -> pd.DataFrame:
+    pwc_sentences = [json.loads(line) for line in open(pwc_sentence_file)]
 
     pwc_output = []
-    for line in tqdm(open(basedir + 'outputs/pwc_s2_cleaned_text_v2_sentences_predictions.jsonl')) :
+    for line in tqdm(open(pwc_prediction_file)) :
         line = json.loads(line)
         del line['logits']
         del line['mask']
@@ -58,18 +61,19 @@ def load_pwc_sentence_predictions(basedir) :
     
     return pwc_sentences
 
-def load_pwc_full_text(basedir) :
-    pwc_df = pd.read_json(basedir + 'data/pwc_s2_cleaned_text_v2.jsonl', lines=True)
+def load_pwc_full_text(pwc_doc_file:str) :
+    pwc_df = pd.read_json(pwc_doc_file, lines=True)
     return pwc_df
 
-def get_pwc_data_and_output(basedir) :
-    pwc_df = load_pwc_full_text(basedir)
-    pwc_sentences = load_pwc_sentence_predictions(basedir)
+def get_pwc_data_and_output(pwc_doc_file:str, pwc_sentence_file:str, pwc_prediction_file:str) :
+    pwc_df = load_pwc_full_text(pwc_doc_file)
+    pwc_sentences = load_pwc_sentence_predictions(pwc_sentence_file, pwc_prediction_file)
     pwc_sentences = pwc_sentences.groupby(['doc_id'], as_index=False) \
                                  .aggregate(lambda x : tuple(x)) \
                                  .apply(extract_entites_from_document, axis=1)
     
-    ids_to_keep = open('data/train_doc_ids.txt').read().split('\n') + open('data/dev_doc_ids.txt').read().split('\n')
+    ids_to_keep = open(os.path.join(BASEPATH, 'data/train_doc_ids.txt')).read().split('\n') \
+                + open(os.path.join(BASEPATH, 'data/dev_doc_ids.txt')).read().split('\n')
     pwc_df = pwc_df[pwc_df.s2_paper_id.isin(ids_to_keep)]
     pwc_sentences = pwc_sentences[pwc_sentences.doc_id.isin(ids_to_keep)]
 
