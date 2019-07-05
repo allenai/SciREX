@@ -1,16 +1,18 @@
 from cite2vec.cite2vec.utils.grobid_util import *
 
 import os
+BASEPATH = os.getenv('RESULT_EXTRACTION_BASEPATH', '.')
+
 import pandas as pd
 from bs4 import BeautifulSoup
 import re
 from tqdm import tqdm
 tqdm.pandas()
 
-GROBID_OUTPUT_PATH = '../../../beltagy/result_extraction/data/grobid/'
-LATEX_OUTPUT_PATH = 'data/plain_text/'
-PWC_PATH = '../../../beltagy/result_extraction/data/pwc_s2.jsonl'
-PWC_CLEANED_OUTPUT_PATH = 'data/pwc_s2_cleaned_text_v3.jsonl'
+GROBID_OUTPUT_PATH = os.path.join(BASEPATH, '../../../beltagy/result_extraction/data/grobid/')
+LATEX_OUTPUT_PATH = os.path.join(BASEPATH, 'data/plain_text/')
+PWC_PATH = os.path.join(BASEPATH, '../../../beltagy/result_extraction/data/pwc_s2.jsonl')
+PWC_CLEANED_OUTPUT_PATH = os.path.join(BASEPATH, 'data/pwc_s2_cleaned_text_v3.jsonl')
 
 def get_arxiv_id(paper_url) :
     if 'arxiv' in paper_url and 'abs' in paper_url:
@@ -50,8 +52,7 @@ def read_latex_file(arxiv_id) :
         c = c.strip()
         if len(c) == 0 :continue
         if len(re.findall('Latex Title End', c)) > 1 :
-            import pdb;
-            pdb.set_trace()
+            breakpoint()
         
         splits = c.split('<Latex Title End>')
         if len(splits) == 2 :

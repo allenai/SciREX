@@ -5,8 +5,10 @@ from bs4 import Comment
 
 
 import os
-in_dir = '../../../beltagy/result_extraction/data/xmls'
-out_dir = 'data/plain_text'
+BASEPATH = os.getenv('RESULT_EXTRACTION_BASEPATH', '.')
+
+in_dir = os.path.join(BASEPATH, '../../../beltagy/result_extraction/data/xmls')
+out_dir = os.path.join(BASEPATH, 'data/plain_text')
 
 def clean(text) :
     text = re.sub(r'\n', ' ', text)
