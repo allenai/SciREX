@@ -8,6 +8,14 @@ import os
 in_dir = '../../../beltagy/result_extraction/data/xmls'
 out_dir = 'data/plain_text'
 
+def clean(text) :
+    text = re.sub(r'\n', ' ', text)
+    text = text.replace(u'\xa0', u' ')
+    text = re.sub(r'\\[^\s]+', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+        
+    return text.strip()
+
 def clean_p(elem):
     texts = []
     for content in elem.contents:
@@ -28,7 +36,7 @@ def clean_p(elem):
                 print(f'UNKNOWWWN tag: {str(content)[:60]} =================================================')
         else:
             print(f'UNKNOWWWN class: {str(content)[:60]} =================================================')
-    return " ".join(texts)
+    return clean(" ".join(texts))
 
 for filename in os.listdir(in_dir):
     if filename.endswith(".xml"):
@@ -45,8 +53,10 @@ for filename in os.listdir(in_dir):
                     c.extract()
                 for elem in soup.find_all(re.compile('title|^p$')):
                     if elem.name == 'p':
-                        f.write(clean_p(elem))
-                        f.write('\n')
+                        p_output = clean_p(elem)
+                        if len(p_output) > 0 :
+                            f.write(p_output)
+                            f.write('\n')
                     elif elem.name == 'title':
                         f.write('Latex Section Start\n\n')
                         f.write(f'{elem.parent.name}: {clean_p(elem)}')

@@ -10,11 +10,8 @@ nlp = spacy.load('en')
 def convert_to_sentences(doc_id, text, clean_type) :
     json_sents = []
     sent_id = 0
-    if clean_type in ['latex', 'grobid'] :
-        # Divide into sections and then paragraphs
-        text = [[y.strip() for y in x.strip().split('\n') if len(y.strip()) > 0] for x in text.split('\n\n') if len(x.strip()) > 0]
-    else :
-        text= [[text]]
+    # Divide into sections and then paragraphs
+    text = [[y.strip() for y in x.strip().split('\n') if len(y.strip()) > 0] for x in text.split('\n\n') if len(x.strip()) > 0]
     for section_id, paragraphs in enumerate(text) :
         for para_id, para in enumerate(paragraphs) :
             para = re.sub(r'<pwc_cite>(.*?)</pwc_cite>', '[reference]', para)
@@ -44,7 +41,7 @@ def convert_to_sentences(doc_id, text, clean_type) :
 @click.option("--input_file")
 @click.option("--output_file")
 def get_json_sentences(input_file, output_file) :
-    pwc_df = pd.DataFrame(input_file, lines=True)[['s2_paper_id', 'paper_url', 'cleaned_text', 'clean_type']]
+    pwc_df = pd.read_json(input_file, lines=True)[['s2_paper_id', 'paper_url', 'cleaned_text', 'clean_type']]
     pwc_df = pwc_df.drop_duplicates('s2_paper_id')
 
     def convert_row_to_sentences(row_tup) :
