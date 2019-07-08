@@ -63,12 +63,12 @@ def add_rows_to_files(df, txt_file, ann_file) :
 
     txt_file.write(text)
 
-@click.command()
-@click.option('--pwc_doc_file')
-@click.option('--pwc_sentence_file')
-@click.option('--pwc_prediction_file')
-@click.option('--brat_anno_folder')
-def generate_brat_annotations(pwc_doc_file, pwc_sentence_file, pwc_prediction_file, brat_anno_folder) :
+# @click.command()
+# @click.option('--pwc_doc_file')
+# @click.option('--pwc_sentence_file')
+# @click.option('--pwc_prediction_file')
+# @click.option('--brat_anno_folder')
+def generate_brat_annotations(pwc_doc_file, pwc_sentence_file, pwc_prediction_file, brat_anno_folder, after_doc_id=None) :
     pwc_df = load_pwc_full_text(pwc_doc_file)
     pwc_grouped = pwc_df.groupby('s2_paper_id')[['dataset', 'task', 'model_name', 'metric']] \
                         .aggregate(lambda x : list(set(tuple(x)))).reset_index()
@@ -80,9 +80,8 @@ def generate_brat_annotations(pwc_doc_file, pwc_sentence_file, pwc_prediction_fi
 
     pwc_sentences_grouped = pwc_sentences.groupby('doc_id')
     generate_folders_for_documents(pwc_grouped, brat_anno_folder)
-    already_done = []
     for grp_name, df_group in tqdm(pwc_sentences_grouped) :
-        if grp_name not in already_done :
+        if after_doc_id is None or grp_name > after_doc_id :
             filename = brat_anno_folder + grp_name + '/document'
             txt_file, ann_file = open(filename + '.txt', 'w'), open(filename + '.ann', 'w')
             add_rows_to_files(df_group, txt_file, ann_file)
