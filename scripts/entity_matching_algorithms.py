@@ -11,14 +11,27 @@ def jaccard_similarity(list1, list2):
 clean_text = lambda w : re.sub(r'\s+', ' ', re.sub(r'[^\w\s\.]', ' ', w)).lower().split()
 def char_sim(w1:str, w2:str, ng:int = 3, with_abbr:bool = False) :
     char1, char2 = clean_text(w1), clean_text(w2)
-    ng = min(min([len(x) for x in char1 + char2]), ng)
+    if len(char1) == 0 or len(char2) == 0 :
+        print(char1, w1, char2, w2)
+        return 0.0
+    ng = min(min(max([len(x) for x in char1]), max([len(x) for x in char2])), ng)
     def get_n_grams(w_list, n) :
-        n_grams = [w[i:i+n] for w in w_list for i in range(len(w)-n+1)] 
-        if with_abbr :
-            n_grams += ["".join([w[0] for w in w_list[i:i+n]]) for i in range(len(w_list)-n+1)]
+        n_grams = []
+        for w in w_list :
+            if len(w) < n :
+                n_grams += [w]
+            else :
+                n_grams += [w[i:i+n] for i in range(len(w)-n+1)]
         return n_grams
-    char1, char2 = get_n_grams(char1, ng), get_n_grams(char2, ng)
-    if len(char1) == 0  and len(char2) == 0 :
+    
+    def get_n_grams_with_abbr(w_list, n) :
+        n_grams = get_n_grams(w_list, n)
+        if with_abbr :
+            n_grams += get_n_grams(["".join([w[0] for w in w_list])], n)
+        return n_grams
+    
+    char1, char2 = get_n_grams_with_abbr(char1, ng), get_n_grams_with_abbr(char2, ng)
+    if len(char1) == 0 and len(char2) == 0 :
         print(char1, char2, clean_text(w1), clean_text(w2), ng)
     return jaccard_similarity(char1, char2)
 
@@ -28,7 +41,7 @@ def fuzzy_match_with_any(w1:str, w2:str) :
 
 entity_similarity_metric = {
     'Material' : (lambda x, y : char_sim(x, y, 3, True), 0.101010),
-    'Method' : (lambda x, y : char_sim(x, y, 3, False), 0.30),
+    'Method' : (lambda x, y : char_sim(x, y, 3, False), 0.31),
     'Task' : (lambda x, y : char_sim(x, y, 3, True), 0.353535),
     'Metric' : (lambda x, y : char_sim(x, y, 3, True), 0.111111)
 }
