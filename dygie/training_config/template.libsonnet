@@ -41,7 +41,7 @@ function(p) {
     (if p.use_char then char_n_filters else 0) +
     (if p.use_bert then bert_base_dim else 0)
   ),
-  local endpoint_span_emb_dim = 4 * p.lstm_hidden_size + p.feature_size,
+  local endpoint_span_emb_dim = 2 * (2 * p.lstm_hidden_size) + p.feature_size,
   local attended_span_emb_dim = if p.use_attentive_span_extractor then token_embedding_dim else 0,
   local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim,
   local pair_emb_dim = 3 * span_emb_dim,
@@ -75,8 +75,8 @@ function(p) {
       type: "bert-pretrained",
       pretrained_model: std.extVar("BERT_VOCAB"),
       do_lowercase: std.extVar("IS_LOWERCASE"),
-      use_starting_offsets: true,
-      truncate_long_sequences : true
+      use_starting_offsets: true
+      // truncate_long_sequences : true
     }
   },
   local text_field_embedder = {
@@ -109,8 +109,8 @@ function(p) {
         [if p.use_bert then "bert"]: {
             type: "bert-pretrained",
             pretrained_model: std.extVar("BERT_WEIGHTS"),
-            //requires_grad: "11",
-            //top_layer_only: false
+            requires_grad: "11",
+            top_layer_only: false
         }
     }
   },
@@ -147,6 +147,7 @@ function(p) {
     display_metrics: display_metrics[p.target],
     context_layer: {
       type: "lstm",
+      // type: "pass_through",
       bidirectional: true,
       input_size: token_embedding_dim,
       hidden_size: p.lstm_hidden_size,

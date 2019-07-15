@@ -19,6 +19,6 @@ export TRAIN_PATH=$ERC_DATA_BASE_PATH/train.json
 export DEV_PATH=$ERC_DATA_BASE_PATH/dev.json
 export TEST_PATH=$ERC_DATA_BASE_PATH/test.json
 
-export OUTPUT_BASE_PATH=outputs/sciERC_outputs/experiment_BERT_DyGIE/`date "+%Y%m%d-%H%M%S"`
+export OUTPUT_BASE_PATH=outputs/sciERC_outputs/experiment_BERT_DyGIE_bert_final_layer_and_lstm/`date "+%Y%m%d-%H%M%S"`
 
 allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $CONFIG_FILE
