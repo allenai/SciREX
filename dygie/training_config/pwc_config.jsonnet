@@ -9,7 +9,7 @@ local template = import "template.libsonnet";
 local params = {
   // Primary prediction target. Watch metrics associated with this target.
   target: "ner",
-  dataset_reader: 'ie_json',
+  dataset_reader: 'pwc_json',
   // If debugging, don't load expensive embedding files.
   debug: false,
 
@@ -35,8 +35,8 @@ local params = {
   lstm_dropout: 0.4,
   loss_weights: {          // Loss weights for the modules.
     ner: 1.0,
-    relation: 1.0,
-    coref: 1.0
+    relation: 0.0,
+    coref: 0.0
   },
 
   // Coref settings.
@@ -48,6 +48,7 @@ local params = {
   relation_positive_label_weight: 1.0,
 
   // Model training
+  decoding_type: "all_decode",
   batch_size: 10,
   num_epochs: 250,
   patience: 25,
