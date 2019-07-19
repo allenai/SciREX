@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import torch
+import torch.nn.functional as F
 from overrides import overrides
 
 from allennlp.data import Vocabulary
@@ -32,6 +33,8 @@ class NERTagger(Model):
     def __init__(self,
                  vocab: Vocabulary,
                  mention_feedforward: FeedForward,
+                 decoding_type:str = 'dp_decode',
+                 decoding_metric:str = 'entropy',
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(NERTagger, self).__init__(vocab, regularizer)
@@ -54,6 +57,9 @@ class NERTagger(Model):
 
         self._loss = torch.nn.CrossEntropyLoss(reduction="sum")
 
+        self._decoding_metric = decoding_metric
+        self._decoding_type = decoding_type
+
         initializer(self)
 
     @overrides
@@ -72,9 +78,9 @@ class NERTagger(Model):
         # Shape: (Batch size, Number of Spans, Span Embedding Size)
         # span_embeddings
 
+        #Shape: (Batch_size, Number of spans, n_labels - 1)
         ner_scores = self._ner_scorer(span_embeddings)
-        dummy_dims = [ner_scores.size(0), ner_scores.size(1), 1]
-        dummy_scores = ner_scores.new_zeros(*dummy_dims)
+        dummy_scores = ner_scores.new_zeros(ner_scores.size(0), ner_scores.size(1), 1)
         ner_scores = torch.cat((dummy_scores, ner_scores), -1)
 
         _, predicted_ner = ner_scores.max(2)
@@ -99,7 +105,10 @@ class NERTagger(Model):
         return output_dict
 
     @overrides
-    def decode(self, output_dict: Dict[str, torch.Tensor]):
+    def decode(self, output_dict: Dict[str, torch.Tensor]) :
+        return getattr(self, self._decoding_type)(output_dict)
+
+    def all_decode(self, output_dict: Dict[str, torch.Tensor]):
         predicted_ner_batch = output_dict["predicted_ner"].detach().cpu()
         spans_batch = output_dict["spans"].detach().cpu()
         span_mask_batch = output_dict["span_mask"].detach().cpu().byte()
@@ -122,6 +131,69 @@ class NERTagger(Model):
         output_dict["decoded_ner"] = res_list
         output_dict["decoded_ner_dict"] = res_dict
         return output_dict
+
+    def dp_decode(self, output_dict: Dict[str, torch.Tensor]):
+        dp_scores = getattr(self, self._decoding_metric)(output_dict['ner_scores'])
+        predicted_ner_batch = output_dict["predicted_ner"].detach().cpu()
+        spans_batch = output_dict["spans"].detach().cpu()
+        span_mask_batch = output_dict["span_mask"].detach().cpu().byte()
+
+        res_list = []
+        res_dict = []
+        for spans, spans_mask, spans_predicted_ner, spans_dp_scores in zip(spans_batch, span_mask_batch, predicted_ner_batch, dp_scores) :
+            entry_dict = {}
+            spans, spans_predicted_ner, spans_dp_scores = spans[spans_mask], spans_predicted_ner[spans_mask], spans_dp_scores[spans_mask]
+            for span, ner_label, dp_score in zip(spans, spans_predicted_ner, spans_dp_scores) :
+                ner = ner_label.item()
+                length, max_span_length = 0, 0
+                the_span = (span[0].item(), span[1].item())
+                length = max(length, the_span[1] + 1)
+                max_span_length = max(max_span_length, the_span[1] - the_span[0] + 1)
+                the_label = self.vocab.get_token_from_index(ner, "ner_labels")
+                entry_dict[the_span] = (the_label, dp_score.item())
+
+            entry_dict = self.run_dynamic_programming(entry_dict, length, max_span_length)
+            res_list.append([(k[0], k[1], label) for k, label in entry_dict.items()])
+            res_dict.append(entry_dict)
+
+        output_dict["decoded_ner"] = res_list
+        output_dict["decoded_ner_dict"] = res_dict
+        return output_dict
+
+    def run_dynamic_programming(self, entry_dict, doc_length, max_span_length) :
+        base_score = float('inf')
+        doc_length_position = [-1] * doc_length
+        doc_length_best_score = [base_score] * doc_length
+
+        for i in range(doc_length) :
+            for j in range(1, max_span_length + 1) :
+                span_end = i
+                span_start = span_end - j + 1
+                if span_start < 0 : continue
+                last_index = span_start - 1
+                curr_span_score = entry_dict[(span_start, span_end)][1]
+                last_index_score = doc_length_best_score[last_index] if last_index >= 0 else 0
+                curr_score = last_index_score + curr_span_score
+                if curr_score < doc_length_best_score[i] :
+                    doc_length_best_score[i] = curr_score
+                    doc_length_position[i] = last_index
+
+        decoded_entry_dict = {}
+        backlink = doc_length - 1
+        while backlink >= 0 :
+            best_last_index = doc_length_position[backlink]
+            span_start = best_last_index + 1
+            span_end = backlink
+            if entry_dict[(span_start, span_end)][0] > 0 :
+                decoded_entry_dict[(span_start, span_end)] = entry_dict[(span_start, span_end)][0]
+            backlink = best_last_index
+
+        return decoded_entry_dict
+
+    def entropy(self, scores: torch.Tensor) :
+        p, log_p = F.softmax(scores, dim=-1), F.log_softmax(scores, dim=-1)
+        h = -(p * log_p).sum(-1)
+        return h
 
     @overrides
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:

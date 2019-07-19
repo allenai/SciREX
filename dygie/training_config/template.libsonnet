@@ -75,8 +75,8 @@ function(p) {
       type: "bert-pretrained",
       pretrained_model: std.extVar("BERT_VOCAB"),
       do_lowercase: std.extVar("IS_LOWERCASE"),
-      use_starting_offsets: true
-      // truncate_long_sequences : true
+      use_starting_offsets: true,
+      truncate_long_sequences : false
     }
   },
   local text_field_embedder = {
@@ -109,7 +109,7 @@ function(p) {
         [if p.use_bert then "bert"]: {
             type: "bert-pretrained",
             pretrained_model: std.extVar("BERT_WEIGHTS"),
-            requires_grad: "11",
+            requires_grad: 'none',
             top_layer_only: false
         }
     }
@@ -120,7 +120,7 @@ function(p) {
   // The model
 
   dataset_reader: {
-    type: "ie_json",
+    type: p.dataset_reader,
     token_indexers: token_indexers,
     max_span_width: p.max_span_width,
     context_width: p.context_width
@@ -164,7 +164,8 @@ function(p) {
       },
       ner: {
         mention_feedforward: make_feedforward(span_emb_dim),
-        initializer: module_initializer
+        initializer: module_initializer,
+        decoding_type: p.decoding_type,
       },
       relation: {
         spans_per_word: p.relation_spans_per_word,
@@ -184,7 +185,8 @@ function(p) {
     batch_size: p.batch_size
   },
   validation_iterator: {
-    type: "ie_document",
+    type: "ie_batch",
+    batch_size: p.batch_size
   },
   trainer: {
     num_epochs: p.num_epochs,
