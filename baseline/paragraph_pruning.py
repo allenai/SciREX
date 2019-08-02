@@ -32,6 +32,7 @@ def compute_paragraph_features(df_concat):
 
 
 def train_model(df_concat, end_id):
+    df_concat = df_concat[df_concat.doc_id < end_id]
     para_features = compute_paragraph_features(df_concat)
     para_features = para_features[para_features.doc_id < end_id]
     para_features["paragraph"] = para_features["filtered_words"].apply(lambda x: " ".join(x).lower())
@@ -59,3 +60,5 @@ def train_model(df_concat, end_id):
     pred = lr.predict_proba(X["test"])[:, 1] > 0.37
     print(metrics.classification_report(y["test"], pred))
     print("=" * 200)
+    
+    return count, lr

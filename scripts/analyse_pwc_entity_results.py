@@ -6,6 +6,7 @@ import json
 import pandas as pd
 from tqdm import tqdm
 from allennlp.data.dataset_readers.dataset_utils.span_utils import bioul_tags_to_spans
+from collections import namedtuple
 
 from typing import List, Dict
 
@@ -21,6 +22,10 @@ map_true_entity_to_available = {v: k for k, v in map_available_entity_to_true.it
 used_entities = list(map_available_entity_to_true.keys())
 true_entities = list(map_available_entity_to_true.values())
 
+Relation = namedtuple("Relation", used_entities + ['score'])
+
+from itertools import combinations, product
+binary_relations = list(combinations(used_entities, 2))
 
 def get_spans(taglist, wordlist):
     entities = {k: [] for k in available_entity_types_sciERC}

@@ -67,3 +67,49 @@ class CandidateRecall(Metric):
     def reset(self):
         self._total_gold = 0
         self._total_matched = 0
+
+class MentionRecall(Metric) :
+    def __init__(self) :
+        self.reset()
+
+    def __call__(self, predicted_spans, true_spans):
+        self._total_gold += true_spans.sum().item()
+        self._total_matched += (true_spans * predicted_spans).sum().item()
+
+    @overrides
+    def get_metric(self, reset=False):
+        recall = self._total_matched *100 / self._total_gold if self._total_gold > 0 else -1
+        if reset:
+            self.reset()
+
+        return recall
+
+    @overrides
+    def reset(self):
+        self._total_gold = 0
+        self._total_matched = 0
+
+class CorefScores(Metric) :
+    def __init__(self) :
+        self.reset()
+
+    def __call__(self, predicted_spans, true_spans):
+        self._total_gold += true_spans.sum().item()
+        self._total_matched += (true_spans * predicted_spans).sum().item()
+        self._total_predicted += predicted_spans.sum().item()
+
+    @overrides
+    def get_metric(self, reset=False):
+        precision, recall, f1 = compute_f1(self._total_predicted, self._total_gold, self._total_matched)
+
+        # Reset counts if at end of epoch.
+        if reset:
+            self.reset()
+
+        return precision, recall, f1
+
+    @overrides
+    def reset(self):
+        self._total_gold = 0
+        self._total_predicted = 0
+        self._total_matched = 0

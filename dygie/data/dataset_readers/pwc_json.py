@@ -2,18 +2,27 @@ import json
 import logging
 from collections import defaultdict
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
-import numpy as np
 from overrides import overrides
 
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.dataset_readers.dataset_utils import enumerate_spans
-from allennlp.data.fields import AdjacencyField, ListField, MetadataField, SequenceLabelField, SpanField, TextField
+from allennlp.data.fields import (
+    AdjacencyField,
+    ListField,
+    MetadataField,
+    SequenceLabelField,
+    SpanField,
+    TextField,
+    MultiLabelField,
+)
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
 from allennlp.data.tokenizers import Token
 
-from dygie.data.dataset_readers.read_pwc_dataset import is_x_in_y
+from dygie.data.dataset_readers.read_pwc_dataset import is_x_in_y, Relation, used_entities
+from dygie.data.dataset_readers.paragraph_utils import *
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -30,6 +39,8 @@ class PwCJsonReader(DatasetReader):
         max_span_width: int,
         token_indexers: Dict[str, TokenIndexer] = None,
         context_width: int = 1,
+        max_paragraph_length=318,
+        merge_paragraph_length=75,
         lazy: bool = False,
     ) -> None:
         super().__init__(lazy)
@@ -37,7 +48,8 @@ class PwCJsonReader(DatasetReader):
         self.k = int((context_width - 1) / 2)
         self._max_span_width = max_span_width
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
-        self._max_paragraph_length = 400
+        self._max_paragraph_length = max_paragraph_length
+        self._merge_paragraph_length = merge_paragraph_length
 
     @overrides
     def _read(self, file_path: str):
@@ -46,55 +58,45 @@ class PwCJsonReader(DatasetReader):
 
         with open(file_path, "r") as f:
             # Loop over the documents.
-            for i, line in enumerate(f):
+            for _, line in enumerate(f):
                 js = json.loads(line)
                 doc_key = js["doc_id"]
 
-                # TODO(Sarthak) : Rename sentences to paragraphs
                 paragraphs: List[(int, int)] = js["paragraphs"]
                 words: List[str] = js["words"]
                 entities: List[(int, int, str)] = js["ner"]
+                corefs: Dict[str, List[(int, int)]] = js["coref"]
+                n_ary_relations = js["n_ary_relations"]
 
-                # entity_length = [e[1] - e[0] for e in entities]
-                # print(max(entity_length))
-                # max_e = entities[np.argmax(entity_length)]
-                # print(words[max_e[0] : max_e[1]], max_e[2])
+                corefs_indexed = {}
 
-                entities_grouped = [{} for _ in range(len(paragraphs))]
-                for e in entities:
-                    for para_id, p in enumerate(paragraphs):
-                        if is_x_in_y(e, p):
-                            entities_grouped[para_id][(e[0] - p[0], e[1] - p[0])] = e[2]
+                map_coref_keys = {k: i for i, k in enumerate(sorted(list(corefs.keys())))}
+                for key in corefs:
+                    for span in corefs[key]:
+                        if tuple(span) not in corefs_indexed:
+                            corefs_indexed[tuple(span)] = []
+                        corefs_indexed[tuple(span)].append(map_coref_keys[key])
 
-                broken_paragraphs = []
-                for p, e in zip(paragraphs, entities_grouped):
-                    plen = p[1] - p[0]
-                    if plen < self._max_paragraph_length:
-                        broken_paragraphs.append(p)
-                    else:
-                        protected_indices = sorted([i for x in e for i in range(x[0] + 1, x[1])])
-                        splits = list(range(0, plen, self._max_paragraph_length))
-                        for split_index, s in enumerate(splits):
-                            if s in protected_indices:
-                                while True:
-                                    s = s + 1
-                                    assert s < splits[split_index + 1] if split_index + 1 < len(splits) else True
-                                    if s not in protected_indices:
-                                        splits[split_index] = s
-                                        break
+                corefs_indexed = {tuple(span): sorted(v) for span, v in corefs_indexed.items()}
 
-                        assert len(set(splits) & set(protected_indices)) == 0, (protected_indices, splits)
-                        new_para = []
-                        if splits[0] != 0:
-                            splits = [0] + splits
-                        for start, end in zip(splits, splits[1:] + [plen]):
-                            if p[0] + end > p[1]:
-                                breakpoint()
-                            new_para.append([p[0] + start, p[0] + end])
+                relations_indexed = {}
+                for i, rel in enumerate(n_ary_relations):
+                    rel = Relation(*rel)._asdict()
+                    relations_indexed[i] = []
+                    for entity in used_entities:
+                        relations_indexed[i].append(map_coref_keys[rel[entity]])
 
-                        if len(new_para) == 0:
-                            breakpoint()
-                        broken_paragraphs += new_para
+                    relations_indexed[i] = sorted(relations_indexed[i])
+
+                broken_paragraphs = move_boundaries(
+                    break_paragraphs(
+                        collapse_paragraphs(
+                            paragraphs, min_len=self._merge_paragraph_length, max_len=self._max_paragraph_length
+                        ),
+                        max_len=self._max_paragraph_length,
+                    ),
+                    entities,
+                )
 
                 for p, q in zip(broken_paragraphs[:-1], broken_paragraphs[1:]):
                     if p[1] != q[0]:
@@ -102,24 +104,37 @@ class PwCJsonReader(DatasetReader):
 
                 paragraphs = broken_paragraphs
                 entities_grouped = [{} for _ in range(len(paragraphs))]
+                corefs_grouped = [{} for _ in range(len(paragraphs))]
+
                 for e in entities:
                     done = False
                     for para_id, p in enumerate(paragraphs):
                         if is_x_in_y(e, p):
                             entities_grouped[para_id][(e[0] - p[0], e[1] - p[0])] = e[2]
+                            corefs_grouped[para_id][(e[0] - p[0], e[1] - p[0])] = corefs_indexed.get((e[0], e[1]), [])
                             done = True
 
                     assert done
 
-                zipped = zip(paragraphs, entities_grouped)
+                zipped = zip(paragraphs, entities_grouped, corefs_grouped)
 
                 # Loop over the sentences.
-                for sentence_num, ((start_ix, end_ix), ner_dict) in enumerate(zipped):
+                for paragraph_num, ((start_ix, end_ix), ner_dict, coref_dict) in enumerate(zipped):
                     relation_dict = {}
-                    cluster_dict = {}
-                    sentence = words[start_ix:end_ix]
+                    paragraph = words[start_ix:end_ix]
+                    if len(paragraph) == 0:
+                        continue
                     instance = self.text_to_instance(
-                        sentence, ner_dict, relation_dict, cluster_dict, doc_key, sentence_num, start_ix, end_ix
+                        paragraph,
+                        ner_dict,
+                        relation_dict,
+                        coref_dict,
+                        doc_key,
+                        paragraph_num,
+                        start_ix,
+                        end_ix,
+                        map_coref_keys,
+                        relations_indexed,
                     )
                     yield instance
 
@@ -134,6 +149,8 @@ class PwCJsonReader(DatasetReader):
         sentence_num: int,
         start_ix: int,
         end_ix: int,
+        map_coref_keys: Dict[str, int],
+        relations_indexed: Dict[int, List[int]],
     ):
         """
         TODO(dwadden) document me.
@@ -142,7 +159,7 @@ class PwCJsonReader(DatasetReader):
         sentence = [self._normalize_word(word) for word in sentence]
 
         text_field = TextField([Token(word) for word in sentence], self._token_indexers)
-
+        assert len(map_coref_keys) > 0
         # Put together the metadata.
         metadata = dict(
             sentence=sentence,
@@ -155,45 +172,50 @@ class PwCJsonReader(DatasetReader):
             sentence_num=sentence_num,
             start_pos_in_doc=start_ix,
             end_pos_in_doc=end_ix,
+            map_coref_keys=map_coref_keys,
+            relations_indexed=relations_indexed
         )
         metadata_field = MetadataField(metadata)
 
         # Generate fields for text spans, ner labels, coref labels.
         spans = []
         span_ner_labels = []
+        span_entity_labels = []
+        span_link_labels = []
         span_coref_labels = []
         for start, end in enumerate_spans(sentence, max_span_width=self._max_span_width):
             span_ix = (start, end + 1)
             label = ner_dict.get(span_ix, "")
+            coref_label = cluster_dict.get(span_ix, [])
             if end - start + 1 == self._max_span_width and label == "":
                 for e in ner_dict:
                     if is_x_in_y(span_ix, e):
                         label = ner_dict[e]
+                        coref_label = cluster_dict[e]
 
+            label = '' if label in ['Method_False', 'Material_False'] else label
             span_ner_labels.append(label)
-            span_coref_labels.append(cluster_dict.get(span_ix, -1))
+            span_entity_labels.append(label.split('_')[0] if label != '' else '')
+            span_link_labels.append('True' if 'True' in label else '')
+
+            span_coref_labels.append(
+                MultiLabelField(
+                    coref_label, label_namespace="coref_labels", skip_indexing=True, num_labels=len(map_coref_keys)
+                )
+            )
             spans.append(SpanField(start, end, text_field))
 
         span_field = ListField(spans)
         ner_label_field = SequenceLabelField(span_ner_labels, span_field, label_namespace="ner_labels")
-        coref_label_field = SequenceLabelField(span_coref_labels, span_field, label_namespace="coref_labels")
+        ner_entity_field = SequenceLabelField(span_entity_labels, span_field, label_namespace="ner_entity_labels")
+        ner_link_field = SequenceLabelField(span_link_labels, span_field, label_namespace="ner_link_labels")
+        coref_label_field = ListField(span_coref_labels)
 
-        # Generate labels for relations. Only store non-null values.
-        # n_spans = len(spans)
-        # span_tuples = [(span.span_start, span.span_end) for span in spans]
-        # candidate_indices = [(i, j) for i in range(n_spans) for j in range(n_spans)]
-
-        relations = []
-        relation_indices = []
-        # for i, j in candidate_indices:
-        #     span_pair = (span_tuples[i], span_tuples[j])
-        #     relation_label = relation_dict.get(span_pair, "")
-        #     if relation_label:
-        #         relation_indices.append((i, j))
-        #         relations.append(relation_label)
-
-        relation_label_field = AdjacencyField(
-            indices=relation_indices, sequence_field=span_field, labels=relations, label_namespace="relation_labels"
+        relation_index_field = ListField(
+            [
+                MultiLabelField(v, label_namespace="coref_labels", skip_indexing=True, num_labels=len(map_coref_keys))
+                for k, v in relations_indexed.items()
+            ]
         )
 
         # Pull it  all together.
@@ -201,8 +223,10 @@ class PwCJsonReader(DatasetReader):
             text=text_field,
             spans=span_field,
             ner_labels=ner_label_field,
+            ner_entity_labels=ner_entity_field,
+            ner_link_labels=ner_link_field,
             coref_labels=coref_label_field,
-            relation_labels=relation_label_field,
+            relation_index=relation_index_field,
             metadata=metadata_field,
         )
 
@@ -234,20 +258,18 @@ class PwCJsonReader(DatasetReader):
             instance_list = sorted(instance_list, key=lambda x: x.fields["metadata"].metadata["sentence_num"])
             tokens = [w for ins in instance_list for w in ins.fields["text"].tokens]
             instance_start = [instance.fields["metadata"].metadata["start_pos_in_doc"] for instance in instance_list]
-            
+
             entities = [
                 (span.span_start + s, span.span_end + s + 1, span_label)
                 for ins, s in zip(instance_list, instance_start)
-                for span, span_label in zip(ins.fields["spans"].field_list, ins.fields['ner_labels'].labels)
-                if span_label != ''
+                for span, span_label in zip(ins.fields["spans"].field_list, ins.fields["ner_labels"].labels)
+                if span_label != ""
             ]
 
             return tokens, entities
 
-        for key in instances_by_doc :
+        for key in instances_by_doc:
             instances_by_doc[key] = convert_list_to_structured(instances_by_doc[key])
 
         return instances_by_doc
-
-
 
