@@ -22,6 +22,7 @@ from allennlp.data.tokenizers import Token
 
 from dygie.data.dataset_readers.read_pwc_dataset import is_x_in_y, Relation, used_entities
 from dygie.data.dataset_readers.paragraph_utils import *
+from dygie.data.dataset_readers.span_utils import *
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -57,7 +58,6 @@ class PwCJsonReader(DatasetReader):
         file_path = cached_path(file_path)
 
         with open(file_path, "r") as f:
-            # Loop over the documents.
             for _, line in enumerate(f):
                 js = json.loads(line)
                 doc_key = js["doc_id"]
@@ -66,8 +66,9 @@ class PwCJsonReader(DatasetReader):
                 words: List[str] = js["words"]
                 entities: List[(int, int, str)] = js["ner"]
                 corefs: Dict[str, List[(int, int)]] = js["coref"]
-                n_ary_relations = js["n_ary_relations"]
+                n_ary_relations: List[Relation] = [Relation(*x) for x in js["n_ary_relations"]]
 
+                entity_tag_sequence: List[str] = spans_to_bio_tags(entities, len(words))
                 corefs_indexed = {}
 
                 map_coref_keys = {k: i for i, k in enumerate(sorted(list(corefs.keys())))}
@@ -81,7 +82,7 @@ class PwCJsonReader(DatasetReader):
 
                 relations_indexed = {}
                 for i, rel in enumerate(n_ary_relations):
-                    rel = Relation(*rel)._asdict()
+                    rel = rel._asdict()
                     relations_indexed[i] = []
                     for entity in used_entities:
                         relations_indexed[i].append(map_coref_keys[rel[entity]])
@@ -122,11 +123,13 @@ class PwCJsonReader(DatasetReader):
                 for paragraph_num, ((start_ix, end_ix), ner_dict, coref_dict) in enumerate(zipped):
                     relation_dict = {}
                     paragraph = words[start_ix:end_ix]
+                    ner_tag_labels = entity_tag_sequence[start_ix:end_ix]
                     if len(paragraph) == 0:
                         continue
                     instance = self.text_to_instance(
                         paragraph,
                         ner_dict,
+                        ner_tag_labels,
                         relation_dict,
                         coref_dict,
                         doc_key,
@@ -143,6 +146,7 @@ class PwCJsonReader(DatasetReader):
         self,
         sentence: List[str],
         ner_dict: Dict[Tuple[int, int], str],
+        ner_tag_labels: List[str],
         relation_dict,
         cluster_dict,
         doc_key: str,
@@ -211,6 +215,8 @@ class PwCJsonReader(DatasetReader):
         ner_link_field = SequenceLabelField(span_link_labels, span_field, label_namespace="ner_link_labels")
         coref_label_field = ListField(span_coref_labels)
 
+        ner_tag_labels = SequenceLabelField(ner_tag_labels, text_field, label_namespace="ner_tag_labels")
+
         relation_index_field = ListField(
             [
                 MultiLabelField(v, label_namespace="coref_labels", skip_indexing=True, num_labels=len(map_coref_keys))
@@ -225,6 +231,7 @@ class PwCJsonReader(DatasetReader):
             ner_labels=ner_label_field,
             ner_entity_labels=ner_entity_field,
             ner_link_labels=ner_link_field,
+            ner_tag_labels=ner_tag_labels,
             coref_labels=coref_label_field,
             relation_index=relation_index_field,
             metadata=metadata_field,
@@ -273,3 +280,63 @@ class PwCJsonReader(DatasetReader):
 
         return instances_by_doc
 
+@DatasetReader.register("pwc_json_crf")
+class PwCTagJsonReader(PwCJsonReader) :
+    def text_to_instance(self,
+        sentence: List[str],
+        ner_dict: Dict[Tuple[int, int], str],
+        ner_tag_labels: List[str],
+        relation_dict,
+        cluster_dict,
+        doc_key: str,
+        sentence_num: int,
+        start_ix: int,
+        end_ix: int,
+        map_coref_keys: Dict[str, int],
+        relations_indexed: Dict[int, List[int]],
+    ):
+        """
+        TODO(dwadden) document me.
+        """
+
+        sentence = [self._normalize_word(word) for word in sentence]
+
+        text_field = TextField([Token(word) for word in sentence], self._token_indexers)
+        assert len(map_coref_keys) > 0
+        # Put together the metadata.
+        metadata = dict(
+            sentence=sentence,
+            ner_dict=ner_dict,
+            relation_dict=relation_dict,
+            cluster_dict=cluster_dict,
+            doc_key=doc_key,
+            start_ix=0,
+            end_ix=len(sentence),
+            sentence_num=sentence_num,
+            start_pos_in_doc=start_ix,
+            end_pos_in_doc=end_ix,
+            map_coref_keys=map_coref_keys,
+            relations_indexed=relations_indexed
+        )
+        metadata_field = MetadataField(metadata)
+
+        ner_label_field = SequenceLabelField(ner_tag_labels, text_field, label_namespace="ner_labels")
+
+        labels = [x.split('-') for x in ner_tag_labels]
+        ner_entity_labels = [x[0] + (('-' + x[1].split('_')[0]) if len(x) > 1 else '') for x in labels]
+        ner_link_labels = [x[0] + (('-' + x[1].split('_')[1]) if len(x) > 1 else '') for x in labels]
+
+        ner_entity_field = SequenceLabelField(ner_entity_labels, text_field, label_namespace="ner_entity_labels")
+        ner_link_field = SequenceLabelField(ner_link_labels, text_field, label_namespace="ner_link_labels")
+        
+
+        # Pull it  all together.
+        fields = dict(
+            text=text_field,
+            ner_labels=ner_label_field,
+            ner_entity_labels=ner_entity_field,
+            ner_link_labels=ner_link_field,
+            metadata=metadata_field,
+        )
+
+        return Instance(fields)

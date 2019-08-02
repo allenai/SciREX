@@ -52,6 +52,7 @@ local params = {
   decoding_type: "all_decode",
   batch_size: 10,
   num_epochs: 250,
+  shuffle_instances: true,
   patience: 10,
   optimizer: {
     type: "sgd",

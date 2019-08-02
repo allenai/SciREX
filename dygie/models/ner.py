@@ -85,7 +85,13 @@ class NERTagger(Model):
                 torch.nn.Linear(mention_feedforward.get_output_dim(), self._n_labels - 1)
             )
 
-        self._ner_metrics = NERMetrics(list(vocab.get_token_to_index_vocabulary("ner_entity_labels").keys()))
+        self._metric_classes = [""] + [
+            e + "_" + str(b)
+            for e in list(vocab.get_token_to_index_vocabulary("ner_entity_labels").keys())
+            for b in [True, False]
+            if e != ""
+        ]
+        self._ner_metrics = NERMetrics(self._metric_classes)
 
         self._decoding_metric = decoding_metric
         self._decoding_type = decoding_type
@@ -150,10 +156,7 @@ class NERTagger(Model):
                 )
             else:
                 loss = self._compute_loss_for_scores(
-                    ner_scores,
-                    ner_labels,
-                    span_mask,
-                    weight=self.map_weights_to_tensor(metadata[0], "ner_labels"),
+                    ner_scores, ner_labels, span_mask, weight=self.map_weights_to_tensor(metadata[0], "ner_labels")
                 )
 
             output_dict["loss"] = loss
@@ -218,7 +221,7 @@ class NERTagger(Model):
             labels = self.vocab.get_token_to_index_vocabulary(label_namespace)
             for k, v in labels.items():
                 if k in weight_dict:
-                    weight[v] = (0.6 + 2*weight_dict[k]/5) if weight_dict[k] < 1 else log(weight_dict[k])
+                    weight[v] = (0.6 + 2 * weight_dict[k] / 5) if weight_dict[k] < 1 else log(weight_dict[k])
                 else:
                     weight[v] = 0.0
             print("SETTING Class weight for " + label_namespace, weight)

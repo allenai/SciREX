@@ -4,13 +4,13 @@ function(p) {
   // Storing constants.
 
   local validation_metrics = {
-    "ner": "+ner_f1",
+    "ner": "+ner_f1-measure",
     "rel": "+rel_f1",
     "coref": "+coref_f1"
   },
 
   local display_metrics = {
-    "ner": ["ner_precision", "ner_recall", "ner_f1"],
+    "ner": ["ner_precision", "ner_recall", "ner_f1-measure"],
     "rel": ["rel_precision", "rel_recall", "rel_f1", "rel_span_recall"],
     "coref": ["coref_precision", "coref_recall", "coref_f1", "coref_mention_recall"]
   },
@@ -144,15 +144,9 @@ function(p) {
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
   test_data_path: std.extVar("TEST_PATH"),
-  // regularizers: {
-  // // should match every layer
-  //  ["*"]: {
-  //    "type": "l2",
-  //    "alpha": 0.0001,
-  //  },
-  // },
+
   model: {
-    type: "dygie",
+    type: "dygie_crf",
     text_field_embedder: text_field_embedder,
     residual_text_field_embedder: residual_text_field_embedder,
     initializer: dygie_initializer,
@@ -174,9 +168,10 @@ function(p) {
         initializer: module_initializer
       },
       ner: {
-        mention_feedforward: make_feedforward(span_emb_dim),
+        mention_feedforward: make_feedforward(context_encoder_dim),
+        label_namespace: p.label_namespace,
+        label_encoding: 'BIOUL',
         initializer: module_initializer,
-        decoding_type: p.decoding_type,
       },
       relation: {
         spans_per_word: p.coref_spans_per_word,
@@ -194,7 +189,7 @@ function(p) {
   validation_iterator: {
     type: "ie_batch",
     batch_size: p.batch_size,
-    shuffle_instances: p.shuffle_instances
+    shuffle_instances: false
   },
   trainer: {
     num_epochs: p.num_epochs,
