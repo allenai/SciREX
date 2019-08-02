@@ -38,12 +38,13 @@ function(p) {
   local use_bert = p.use_bert,
   local token_embedding_dim = (
     (if p.use_glove then glove_dim else 0) +
-    (if p.use_char then char_n_filters else 0) +
+    char_n_filters +
     (if p.use_bert then bert_base_dim else 0)
   ),
-  local endpoint_span_emb_dim = 2 * (2 * p.lstm_hidden_size) + p.feature_size,
+  local context_encoder_dim = if p.use_lstm then 2 * p.lstm_hidden_size else token_embedding_dim,
+  local endpoint_span_emb_dim = 2 * context_encoder_dim + p.feature_size,
   local attended_span_emb_dim = if p.use_attentive_span_extractor then token_embedding_dim else 0,
-  local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim,
+  local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim, // + char_n_filters,
   local pair_emb_dim = 3 * span_emb_dim,
   local relation_scorer_dim = pair_emb_dim,
   local coref_scorer_dim = pair_emb_dim + p.feature_size,
@@ -51,6 +52,13 @@ function(p) {
   ////////////////////////////////////////////////////////////////////////////////
 
   // Function definitions
+  local lstm_context_encoder = {
+    type: "lstm",
+    bidirectional: true,
+    input_size: token_embedding_dim,
+    hidden_size: p.lstm_hidden_size,
+    num_layers: p.lstm_n_layers
+  },
 
   local make_feedforward(input_dim) = {
     input_dim: input_dim,
@@ -83,7 +91,6 @@ function(p) {
       [if use_bert then "allow_unmatched_keys"]: true,
       [if use_bert then "embedder_to_indexer_map"]: {
         bert: ["bert", "bert-offsets"],
-        token_characters: ["token_characters"],
         tokens: ["tokens"],
       },
       token_embedders : {
@@ -93,7 +100,22 @@ function(p) {
           embedding_dim: 300,
           trainable: false
         },
-        [if p.use_char then "token_characters"]: {
+        [if p.use_bert then "bert"]: {
+            type: "bert-pretrained",
+            pretrained_model: std.extVar("BERT_WEIGHTS"),
+            requires_grad: 'none'
+            // top_layer_only: false
+        }
+    }
+  },
+
+  local residual_text_field_embedder = {
+      [if use_bert then "allow_unmatched_keys"]: true,
+      [if use_bert then "embedder_to_indexer_map"]: {
+        token_characters: ["token_characters"]
+      },
+      token_embedders : {
+        "token_characters": {
           type: "character_encoding",
           embedding: {
             embedding_dim: 16
@@ -101,18 +123,12 @@ function(p) {
           encoder: {
             type: "cnn",
             embedding_dim: 16,
-            num_filters: 128,
+            num_filters: char_n_filters,
             ngram_filter_sizes: [5],
             conv_layer_activation: "relu"
           }
         },
-        [if p.use_bert then "bert"]: {
-            type: "bert-pretrained",
-            pretrained_model: std.extVar("BERT_WEIGHTS"),
-            requires_grad: 'none',
-            top_layer_only: false
-        }
-    }
+      },
   },
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -128,16 +144,17 @@ function(p) {
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
   test_data_path: std.extVar("TEST_PATH"),
-  //regularizers: {
-  //should match every layer
+  // regularizers: {
+  // // should match every layer
   //  ["*"]: {
   //    "type": "l2",
-  //    "alpha": 0.001,
+  //    "alpha": 0.0001,
   //  },
-  //},
+  // },
   model: {
     type: "dygie",
     text_field_embedder: text_field_embedder,
+    residual_text_field_embedder: residual_text_field_embedder,
     initializer: dygie_initializer,
     loss_weights: p.loss_weights,
     lexical_dropout: p.lexical_dropout,
@@ -145,20 +162,14 @@ function(p) {
     use_attentive_span_extractor: p.use_attentive_span_extractor,
     max_span_width: p.max_span_width,
     display_metrics: display_metrics[p.target],
-    context_layer: {
-      type: "lstm",
-      // type: "pass_through",
-      bidirectional: true,
-      input_size: token_embedding_dim,
-      hidden_size: p.lstm_hidden_size,
-      num_layers: p.lstm_n_layers,
+    context_layer: if p.use_lstm then lstm_context_encoder else {
+      type: "pass_through",
+      input_dim: token_embedding_dim,
     },
     modules: {
       coref: {
-        span_emb_dim: span_emb_dim,
         spans_per_word: p.coref_spans_per_word,
         max_antecedents: p.coref_max_antecedents,
-        mention_feedforward: make_feedforward(span_emb_dim),
         antecedent_feedforward: make_feedforward(coref_scorer_dim),
         initializer: module_initializer
       },
@@ -168,14 +179,8 @@ function(p) {
         decoding_type: p.decoding_type,
       },
       relation: {
-        spans_per_word: p.relation_spans_per_word,
-        positive_label_weight: p.relation_positive_label_weight,
-        mention_feedforward: make_feedforward(span_emb_dim),
-        relation_feedforward: make_feedforward(relation_scorer_dim),
-        rel_prop_dropout_A: p.rel_prop_dropout_A,
-        rel_prop_dropout_f: p.rel_prop_dropout_f,
-        span_emb_dim: span_emb_dim,
-        rel_prop: p.rel_prop,
+        spans_per_word: p.coref_spans_per_word,
+        antecedent_feedforward: make_feedforward(coref_scorer_dim),
         initializer: module_initializer
       }
     }

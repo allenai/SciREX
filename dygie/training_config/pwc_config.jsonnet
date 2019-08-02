@@ -16,8 +16,9 @@ local params = {
   // Specifies the token-level features that will be created.
   use_glove: false,
   use_char: true,
-  use_attentive_span_extractor: false,
+  use_attentive_span_extractor: true,
   use_bert: true,
+  use_lstm: true,
   rel_prop: 0,
   context_width: 3,
   rel_prop_dropout_A: 0.0,
@@ -36,11 +37,11 @@ local params = {
   loss_weights: {          // Loss weights for the modules.
     ner: 1.0,
     relation: 0.0,
-    coref: 0.0
+    coref: 1.0
   },
 
   // Coref settings.
-  coref_spans_per_word: 0.4,
+  coref_spans_per_word: 0.1,
   coref_max_antecedents: 100,
 
   // Relation settings.
@@ -51,7 +52,7 @@ local params = {
   decoding_type: "all_decode",
   batch_size: 10,
   num_epochs: 250,
-  patience: 25,
+  patience: 10,
   optimizer: {
     type: "sgd",
     lr: 0.01,

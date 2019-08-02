@@ -1,4 +1,4 @@
-from baseline import compute_features, get_all_span_pair_features
+from baseline.baseline import compute_features, get_all_span_pair_features
 from scripts.convert_brat_annotations_to_json import *
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegressionCV
@@ -9,9 +9,11 @@ import warnings
 
 import random
 
-def sample(spans, k=500):
+def sample(spans, k=500, generate_all=False):
     pos = []
     neg = []
+    if generate_all :
+        k = float('inf')
     i = 1
     for s1 in spans:
         for s2 in spans:
@@ -26,7 +28,7 @@ def sample(spans, k=500):
                     pos[random.randrange(k)] = (s1, s2)
                 i += 1
 
-    n = min(k, max(10, len(pos)))
+    n = min(k, max(10, len(pos))) if not generate_all else float('inf')
     i = 1
     for s1 in spans:
         for s2 in spans:
@@ -53,10 +55,11 @@ def combine_mention_by_type(mlist):
 
 
 def train_model(df_concat, end_id):
+    df_concat = df_concat[df_concat.doc_id < end_id]
     fclusters = df_concat.groupby("doc_id").progress_apply(compute_features)
     fclusters = fclusters.apply(combine_mention_by_type)
     fclusters = fclusters.apply(pd.Series)
-    samples = fclusters[used_entities].progress_applymap(sample)
+    samples = fclusters[used_entities].progress_applymap(lambda x: sample(x, generate_all=True))
 
     samples_done = samples[samples.index < end_id]
     doc_split = {}

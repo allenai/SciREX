@@ -20,7 +20,7 @@ from dygie.models import shared
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class CorefResolver(Model):
+class RelationExtractor(Model):
     """
     TODO(dwadden) document correctly.
 
@@ -53,24 +53,22 @@ class CorefResolver(Model):
         antecedent_feedforward: FeedForward,
         feature_size: int,
         spans_per_word: float,
-        max_antecedents: int,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None,
     ) -> None:
-        super(CorefResolver, self).__init__(vocab, regularizer)
+        super(RelationExtractor, self).__init__(vocab, regularizer)
 
         self._antecedent_feedforward = TimeDistributed(antecedent_feedforward)
         self._mention_pruner = PrescoredPruner()
         self._antecedent_scorer = TimeDistributed(torch.nn.Linear(antecedent_feedforward.get_output_dim(), 1))
 
-        self._score_mixer = torch.nn.Linear(4, 1, bias=False)
+        self._score_mixer = torch.nn.Linear(3, 1, bias=False)
 
         # 10 possible distance buckets.
         self._num_distance_buckets = 10
         self._distance_embedding = Embedding(self._num_distance_buckets, feature_size)
 
         self._spans_per_word = spans_per_word
-        self._max_antecedents = max_antecedents
 
         self._mention_recall = MentionRecall()
         self._coref_scores_1 = CorefScores()
@@ -83,11 +81,10 @@ class CorefResolver(Model):
         spans_batched: torch.IntTensor,
         span_mask_batched,
         span_embeddings_batched,
-        residual_span_embeddings_batched,
         span_scores_batched,
-        span_ner_scores_dist_batched,
         sentence_lengths,
         coref_labels_batched: torch.IntTensor = None,
+        relation_index_batched: torch.IntTensor = None,
         metadata: List[Dict[str, Any]] = None,
     ) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
@@ -97,39 +94,33 @@ class CorefResolver(Model):
         Important: This function assumes that sentences are going to be passed in in sorted order,
         from the same document.
         """
-        # TODO(dwadden) How to handle case where only one span from a cluster makes it into the
-        # minibatch? Should I get rid of the cluster?
-        # TODO(dwadden) Write quick unit tests for correctness, time permitting.
         span_ix = span_mask_batched.view(-1).nonzero().squeeze()  # Indices of the spans to keep.
-        spans = self._flatten_spans(span_ix, spans_batched, sentence_lengths)
+        spans, span_embeddings, span_scores, coref_labels = self._flatten_spans(
+            span_ix, spans_batched, span_embeddings_batched, span_scores_batched, coref_labels_batched, sentence_lengths
+        )
 
-        # Flatten the span embeddings and keep the good ones.
-        span_embeddings = self._flatten_span_info(span_embeddings_batched, span_ix)
-        span_scores = self._flatten_span_info(span_scores_batched, span_ix)
-        span_ner_scores_dist = self._flatten_span_info(span_ner_scores_dist_batched, span_ix)
-        coref_labels = self._flatten_span_info(coref_labels_batched, span_ix)
+        relation_index = relation_index_batched[0].unsqueeze(0).transpose(1, 2)
+        assert len(relation_index.shape) == 3 and relation_index.shape[1] == coref_labels.shape[2]
+
+        coref_labels = torch.bmm(coref_labels.float(), relation_index.float()).clamp(0, 1).long()
 
         document_length = sentence_lengths.sum().item()
         num_spans = spans.size(1)
 
         # Prune based on mention scores. Make sure we keep at least 1.
-        num_spans_to_keep = min(max(2, int(math.ceil(self._spans_per_word * document_length))), 100)
+        num_spans_to_keep = min(max(2, int(math.ceil(self._spans_per_word * document_length))), 200)
 
         # Since there's only one minibatch, there aren't any masked spans for us. The span mask is
         # always 1.
         span_mask = torch.ones(num_spans, device=spans_batched.device).unsqueeze(0)
 
-        # Shape: (1, num_spans_to_keep, E), (1, num_spans_to_keep), (1, num_spans_to_keep), (1, num_spans_to_keep, 1)
+        #Shape: (1, num_spans_to_keep, E), (1, num_spans_to_keep), (1, num_spans_to_keep), (1, num_spans_to_keep, 1)
         (top_span_embeddings, top_span_mask, top_span_indices, top_span_mention_scores) = self._mention_pruner(
             span_embeddings, span_mask, num_spans_to_keep, span_scores
         )
         top_span_mask = top_span_mask.unsqueeze(-1)
         # Shape: (batch_size * num_spans_to_keep)
         flat_top_span_indices = util.flatten_and_batch_shift_indices(top_span_indices, num_spans)
-
-        top_span_ner_scores_dist = util.batched_index_select(
-                span_ner_scores_dist, top_span_indices, flat_top_span_indices
-            )
 
         # Compute final predictions for which spans to consider as mentions.
         # Shape: (batch_size, num_spans_to_keep, 2)
@@ -149,25 +140,24 @@ class CorefResolver(Model):
         coreference_scores = self.get_coref_scores(
             top_span_embeddings,
             top_span_mention_scores,
-            top_span_ner_scores_dist,
             valid_antecedent_indices,
             valid_antecedent_offsets,
             valid_antecedent_log_mask,
         )
 
         output_dict = {
-            "top_spans": top_spans,  # (1, num_spans_to_keep, 2)
-            "antecedent_indices": valid_antecedent_indices,  # (num_spans_to_keep, max_antecendents)
-            "valid_antecedent_log_mask": valid_antecedent_log_mask,  # (1, num_spans_to_keep, max_antecedents)
-            "valid_antecedent_offsets": valid_antecedent_offsets,  # (1, max_antecedents)
-            "top_span_indices": top_span_indices,  # (1, num_spans_to_keep)
-            "top_span_mask": top_span_mask,  # (1, num_spans_to_keep, 1)
-            "top_span_embeddings": top_span_embeddings,  # (1, num_spans_to_keep, E)
-            "flat_top_span_indices": flat_top_span_indices,  # (num_spans_to_keep,)
-            "coref_labels": coref_labels,  # (1, num_spans, n_LE)
-            "coreference_scores": coreference_scores,  # (1, num_spans, max_antecedent + 1)
-            "sentence_lengths": sentence_lengths,  # (B,)
-            "span_ix": span_ix,  # (num_spans,)
+            "top_spans": top_spans, #(1, num_spans_to_keep, 2)
+            "antecedent_indices": valid_antecedent_indices, #(num_spans_to_keep, max_antecendents)
+            "valid_antecedent_log_mask": valid_antecedent_log_mask, #(1, num_spans_to_keep, max_antecedents)
+            "valid_antecedent_offsets": valid_antecedent_offsets, #(1, max_antecedents)
+            "top_span_indices": top_span_indices, #(1, num_spans_to_keep)
+            "top_span_mask": top_span_mask, #(1, num_spans_to_keep, 1)
+            "top_span_embeddings": top_span_embeddings, #(1, num_spans_to_keep, E)
+            "flat_top_span_indices": flat_top_span_indices, #(num_spans_to_keep,)
+            "coref_labels": coref_labels, #(1, num_spans, n_LE)
+            "coreference_scores": coreference_scores, #(1, num_spans, max_antecedent + 1)
+            "sentence_lengths": sentence_lengths, #(B,)
+            "span_ix": span_ix, #(num_spans,)
             "metadata": metadata,
         }
 
@@ -177,7 +167,6 @@ class CorefResolver(Model):
         self,
         top_span_embeddings,
         top_span_mention_scores,
-        top_span_ner_scores_dist,
         valid_antecedent_indices,
         valid_antecedent_offsets,
         valid_antecedent_log_mask,
@@ -187,11 +176,6 @@ class CorefResolver(Model):
         candidate_antecedent_mention_scores = util.flattened_index_select(
             top_span_mention_scores, valid_antecedent_indices
         ).squeeze(-1)
-
-        # Shape: (batch_size, num_spans_to_keep, max_antecedents, ner_labels)
-        candidate_antecedent_ner_scores_dist = util.flattened_index_select(
-            top_span_ner_scores_dist, valid_antecedent_indices
-        )
         # Compute antecedent scores.
         # Shape: (batch_size, num_spans_to_keep, max_antecedents, embedding_size)
         span_pair_embeddings = self._compute_span_pair_embeddings(
@@ -201,16 +185,14 @@ class CorefResolver(Model):
         coreference_scores = self._compute_coreference_scores(
             span_pair_embeddings,
             top_span_mention_scores,
-            top_span_ner_scores_dist,
             candidate_antecedent_mention_scores,
-            candidate_antecedent_ner_scores_dist,
             valid_antecedent_log_mask,
         )
         return coreference_scores
 
     def predict_labels(self, output_dict):
-        coref_labels = output_dict["coref_labels"]  # (1, num_spans, n_LE)
-        coreference_scores = output_dict["coreference_scores"]  # (1, num_spans_to_keep, max_antecedent)
+        coref_labels = output_dict["coref_labels"] #(1, num_spans, n_LE)
+        coreference_scores = output_dict["coreference_scores"] #(1, num_spans_to_keep, max_antecedent)
 
         predicted_antecedents = (coreference_scores > 0.5).long()
         output_dict["predicted_antecedents"] = predicted_antecedents
@@ -225,36 +207,28 @@ class CorefResolver(Model):
             # Find the gold labels for the spans which we kept.
             pruned_gold_labels = util.batched_index_select(
                 coref_labels, top_span_indices, flat_top_span_indices
-            )  # (1, num_spans_to_keep, n_LE)
+            ) #(1, num_spans_to_keep, n_LE)
 
-            # (1, num_spans_to_keep, max_antecedents, n_LE)
+            #(1, num_spans_to_keep, max_antecedents, n_LE)
             antecedent_labels = util.flattened_index_select(pruned_gold_labels, valid_antecedent_indices)
             # There's an integer wrap-around happening here. It occurs in the original code.
             antecedent_labels *= valid_antecedent_log_mask.exp().long().unsqueeze(-1)
 
             # Compute labels.
             # Shape: (1, num_spans_to_keep, max_antecedents)
-            gold_antecedent_labels, linked_indicator = self._compute_antecedent_gold_labels(
-                pruned_gold_labels, antecedent_labels
-            )
+            gold_antecedent_labels, linked_indicator = self._compute_antecedent_gold_labels(pruned_gold_labels, antecedent_labels)
             # Now, compute the loss using the negative marginal log-likelihood.
-            output_dict["loss"] = F.binary_cross_entropy(
-                torch.sigmoid(coreference_scores),
-                gold_antecedent_labels,
-                weight=linked_indicator + 20 * gold_antecedent_labels,
-            )
+            output_dict['loss'] = F.binary_cross_entropy(torch.sigmoid(coreference_scores), 
+                                            gold_antecedent_labels, 
+                                            weight=linked_indicator + 20*gold_antecedent_labels)
 
             true_spans_with_coref = (coref_labels.sum(-1) > 0).long().squeeze(0)
-            predicted_spans_with_coref = torch.zeros(
-                *true_spans_with_coref.size(), device=true_spans_with_coref.device
-            ).long()
+            predicted_spans_with_coref = torch.zeros(*true_spans_with_coref.size(), device=true_spans_with_coref.device).long()
             predicted_spans_with_coref[top_span_indices] = 1
 
             self._mention_recall(predicted_spans_with_coref, true_spans_with_coref)
             self._coref_scores_1(predicted_antecedents.squeeze(0).long(), gold_antecedent_labels.squeeze(0).long())
-            self._coref_scores_0(
-                1 - predicted_antecedents.squeeze(0).long(), 1 - gold_antecedent_labels.squeeze(0).long()
-            )
+            self._coref_scores_0(1 - predicted_antecedents.squeeze(0).long(), 1 - gold_antecedent_labels.squeeze(0).long())
 
         return output_dict
 
@@ -338,13 +312,13 @@ class CorefResolver(Model):
         coref_precision_0, coref_recall_0, coref_f1_0 = self._coref_scores_0.get_metric(reset)
 
         return {
-            "coref_precision_1": coref_precision_1,
-            "coref_recall_1": coref_recall_1,
-            "coref_f1_1": coref_f1_1,
-            "coref_precision_0": coref_precision_0,
-            "coref_recall_0": coref_recall_0,
-            "coref_f1_0": coref_f1_0,
-            "coref_mention_recall": mention_recall
+            "rel_precision_1": coref_precision_1,
+            "rel_recall_1": coref_recall_1,
+            "rel_f1_1": coref_f1_1,
+            "rel_precision_0": coref_precision_0,
+            "rel_recall_0": coref_recall_0,
+            "rel_f1_0": coref_f1_0,
+            "rel_mention_recall": mention_recall,
         }
 
     @staticmethod
@@ -495,16 +469,14 @@ class CorefResolver(Model):
         target_labels = top_coref_labels.unsqueeze(2)
         same_cluster_indicator = (target_labels * antecedent_labels).sum(-1).byte().float()
         linked_indicator = (target_labels + antecedent_labels).sum(-1).byte().float()
-        pairwise_labels = same_cluster_indicator  # (1, num_spans_to_keep, max_antecedents)
+        pairwise_labels = same_cluster_indicator #(1, num_spans_to_keep, max_antecedents)
         return pairwise_labels, linked_indicator
 
     def _compute_coreference_scores(
         self,
         pairwise_embeddings: torch.FloatTensor,
         top_span_mention_scores: torch.FloatTensor,
-        top_span_ner_scores_dist: torch.FloatTensor,
         antecedent_mention_scores: torch.FloatTensor,
-        candidate_antecedent_ner_scores_dist: torch.FloatTensor,
         antecedent_log_mask: torch.FloatTensor,
     ) -> torch.FloatTensor:
         """
@@ -523,8 +495,6 @@ class CorefResolver(Model):
         top_span_mention_scores: ``torch.FloatTensor``, required.
             Mention scores for every span. Has shape
             (batch_size, num_spans_to_keep, max_antecedents).
-        top_span_ner_scores_dist: ``torch.FloatTensor``, required.
-            (batch_size, num_spans_to_keep, ner_labels)
         antecedent_mention_scores: ``torch.FloatTensor``, required.
             Mention scores for every antecedent. Has shape
             (batch_size, num_spans_to_keep, max_antecedents).
@@ -541,31 +511,15 @@ class CorefResolver(Model):
         """
         # Shape: (batch_size, num_spans_to_keep, max_antecedents)
         antecedent_scores = self._antecedent_scorer(self._antecedent_feedforward(pairwise_embeddings))
-        top_span_ner_scores_dist = top_span_ner_scores_dist.unsqueeze(2) #(B, NS, MA, l)
-        kl_score = self.safe_kl_div(top_span_ner_scores_dist, candidate_antecedent_ner_scores_dist)
-        kl_score += self.safe_kl_div(candidate_antecedent_ner_scores_dist, top_span_ner_scores_dist)
-        kl_score = torch.exp(-kl_score)
-
-        antecedent_scores = torch.cat(
-            [
-                top_span_mention_scores.unsqueeze(-1).expand_as(antecedent_scores),
-                antecedent_mention_scores.unsqueeze(-1),
-                antecedent_scores,
-                kl_score.unsqueeze(-1)
-            ],
-            dim=-1,
-        )
+        antecedent_scores = torch.cat([top_span_mention_scores.unsqueeze(-1).expand_as(antecedent_scores), 
+                                        antecedent_mention_scores.unsqueeze(-1), antecedent_scores], dim=-1)
         antecedent_scores = self._score_mixer(antecedent_scores).squeeze(-1)
         antecedent_scores += antecedent_log_mask
 
         return antecedent_scores
 
     @staticmethod
-    def safe_kl_div(p, q, dim=-1) :
-        return (p * torch.log(p/(q + 1e-10))).sum(dim)
-
-    @staticmethod
-    def _flatten_spans(span_ix, spans_batched, sentence_lengths):
+    def _flatten_spans(span_ix, spans_batched, span_embeddings_batched, span_scores_batched, coref_labels_batched, sentence_lengths):
         """
         Spans are input with each minibatch as a sentence. For coref, it's easier to flatten them out
         and consider all sentences together as a document.
@@ -578,13 +532,19 @@ class CorefResolver(Model):
         spans_flat = spans_offset.view(-1, 2)
         spans_flat = spans_flat[span_ix].unsqueeze(0)
 
-        # (1, Total Spans, *)
-        return spans_flat
+        # Flatten the span embeddings and keep the good ones.
+        feature_size = span_embeddings_batched.size(-1)
+        emb_flat = span_embeddings_batched.view(-1, feature_size)
+        span_embeddings_flat = emb_flat[span_ix].unsqueeze(0)
 
-    @staticmethod
-    def _flatten_span_info(span_info_batched, span_ix):
-        feature_size = span_info_batched.size(-1)
-        emb_flat = span_info_batched.view(-1, feature_size)
-        span_info_flat = emb_flat[span_ix].unsqueeze(0)
-        return span_info_flat
+        scores_size = span_scores_batched.size(-1)
+        scores_flat = span_scores_batched.view(-1, scores_size)
+        span_scores_flat = scores_flat[span_ix].unsqueeze(0)
+
+        labels_size = coref_labels_batched.size(-1)
+        labels_flat = coref_labels_batched.view(-1, labels_size)
+        labels_flat = labels_flat[span_ix].unsqueeze(0)
+
+        #(1, Total Spans, *)
+        return spans_flat, span_embeddings_flat, span_scores_flat, labels_flat
 

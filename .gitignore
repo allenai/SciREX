@@ -110,3 +110,4 @@ Testing.ipynb
 
 notebooks/Testbed*
 .vscode
+!dygie/data

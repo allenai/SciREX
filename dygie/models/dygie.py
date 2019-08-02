@@ -10,12 +10,13 @@ from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.modules.span_extractors import EndpointSpanExtractor, SelfAttentiveSpanExtractor
+from dygie.models.span_extractor import MaxPoolSpanExtractor
 from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 
 # Import submodules.
 from dygie.models.coref import CorefResolver
 from dygie.models.ner import NERTagger
-from dygie.models.relation import RelationExtractor
+from dygie.models.relation_pwc import RelationExtractor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -52,8 +53,9 @@ class DyGIE(Model):
         self,
         vocab: Vocabulary,
         text_field_embedder: TextFieldEmbedder,
+        residual_text_field_embedder: TextFieldEmbedder,
         context_layer: Seq2SeqEncoder,
-        modules,  
+        modules,
         feature_size: int,
         max_span_width: int,
         loss_weights: Dict[str, int],
@@ -66,6 +68,7 @@ class DyGIE(Model):
         super(DyGIE, self).__init__(vocab, regularizer)
 
         self._text_field_embedder = text_field_embedder
+        self._residual_text_field_embedder = residual_text_field_embedder
         self._context_layer = context_layer
 
         self._loss_weights = loss_weights.as_dict()
@@ -84,8 +87,15 @@ class DyGIE(Model):
             span_width_embedding_dim=feature_size,
             bucket_widths=False,
         )
+
+        self._residual_span_extractor = MaxPoolSpanExtractor(
+            residual_text_field_embedder.get_output_dim(),
+        )
+
         if use_attentive_span_extractor:
-            self._attentive_span_extractor = SelfAttentiveSpanExtractor(input_dim=text_field_embedder.get_output_dim())
+            self._attentive_span_extractor = SelfAttentiveSpanExtractor(
+                input_dim=text_field_embedder.get_output_dim() + residual_text_field_embedder.get_output_dim()
+            )
         else:
             self._attentive_span_extractor = None
 
@@ -101,18 +111,13 @@ class DyGIE(Model):
         initializer(self)
 
     @overrides
-    def forward(self, text, spans, ner_labels, coref_labels, relation_labels, metadata):
-        """
-        TODO(dwadden) change this.
-        """
-
-        # In AllenNLP, AdjacencyFields are passed in as floats. This fixes it.
-        relation_labels = relation_labels.long()
+    def forward(self, text, spans, ner_labels, ner_entity_labels, ner_link_labels, coref_labels, relation_index, metadata):
 
         # Shape: (batch_size, max_sentence_length, embedding_size)
         text_embeddings = self._lexical_dropout(self._text_field_embedder(text))
+        residual_text_embeddings = self._lexical_dropout(self._residual_text_field_embedder(text))
 
-        # Shape: (batch_size, max_sentence_length)
+        text_embeddings = torch.cat([text_embeddings, residual_text_embeddings], dim=-1)
         text_embeddings, text_mask, sentence_lengths = self.extract_sentence_from_context(metadata, text_embeddings)
 
         # Shape: (batch_size, max_sentence_length, encoding_dim)
@@ -122,6 +127,9 @@ class DyGIE(Model):
         if self._attentive_span_extractor is not None:
             # Shape: (batch_size, num_spans, emebedding_size)
             attended_span_embeddings = self._attentive_span_extractor(text_embeddings, spans)
+
+        #Shape: (batch_size, num_spans, residual_embedding_dim)
+        residual_span_embeddings = None #self._residual_span_extractor(residual_text_embeddings, spans)
 
         # Shape: (batch_size, num_spans)
         span_mask = (spans[:, :, 0] >= 0).float()
@@ -138,6 +146,8 @@ class DyGIE(Model):
         # Shape: (batch_size, num_spans, 2 * encoding_dim + feature_size)
         endpoint_span_embeddings = self._endpoint_span_extractor(contextualized_embeddings, spans)
 
+        # endpoint_span_embeddings = torch.cat([endpoint_span_embeddings, residual_span_embeddings], -1)
+
         if self._attentive_span_extractor is not None:
             # Shape: (batch_size, num_spans, emebedding_size + 2 * encoding_dim + feature_size)
             span_embeddings = torch.cat([endpoint_span_embeddings, attended_span_embeddings], -1)
@@ -149,43 +159,29 @@ class DyGIE(Model):
         output_ner = {"loss": 0}
         output_relation = {"loss": 0}
 
+        # Make predictions and compute losses for each module
+        output_ner = self._ner(spans, span_mask, span_embeddings, ner_labels, ner_entity_labels, ner_link_labels, metadata)
+
+        ner_scores = output_ner["ner_linked_scores"]
+        ner_scores_dist = output_ner["ner_scores"]
+
         # Prune and compute span representations for coreference module
-        if self._loss_weights["coref"] > 0 or self._coref.coref_prop > 0:
-            output_coref, coref_indices = self._coref.compute_representations(
-                spans, span_mask, span_embeddings, sentence_lengths, coref_labels, metadata
+        if self._loss_weights["coref"] > 0:
+            output_coref = self._coref.compute_representations(
+                spans, span_mask, span_embeddings, residual_span_embeddings, ner_scores, ner_scores_dist, sentence_lengths, coref_labels, metadata
             )
 
         # Prune and compute span representations for relation module
-        if self._loss_weights["relation"] > 0 or self._relation.rel_prop > 0:
+        if self._loss_weights["relation"] > 0:
             output_relation = self._relation.compute_representations(
-                spans, span_mask, span_embeddings, sentence_lengths, relation_labels, metadata
+                spans, span_mask, span_embeddings, ner_scores, sentence_lengths, coref_labels, relation_index, metadata
             )
-
-        # Propagation of global information to enhance the span embeddings
-        if self._coref.coref_prop > 0:
-            # TODO(Ulme) Implement Coref Propagation
-            output_coref = self._coref.coref_propagation(output_coref)
-            span_embeddings = self._coref.update_spans(output_coref, span_embeddings, coref_indices)
-
-        if self._relation.rel_prop > 0:
-            output_relation = self._relation.relation_propagation(output_relation)
-            span_embeddings = self.update_span_embeddings(
-                span_embeddings,
-                span_mask,
-                output_relation["top_span_embeddings"],
-                output_relation["top_span_mask"],
-                output_relation["top_span_indices"],
-            )
-
-        # Make predictions and compute losses for each module
-        if self._loss_weights["ner"] > 0:
-            output_ner = self._ner(spans, span_mask, span_embeddings, sentence_lengths, ner_labels, metadata)
 
         if self._loss_weights["coref"] > 0:
-            output_coref = self._coref.predict_labels(output_coref, metadata)
+            output_coref = self._coref.predict_labels(output_coref)
 
         if self._loss_weights["relation"] > 0:
-            output_relation = self._relation.predict_labels(relation_labels, output_relation, metadata)
+            output_relation = self._relation.predict_labels(output_relation)
 
         if "loss" not in output_coref:
             output_coref["loss"] = 0
@@ -214,17 +210,6 @@ class DyGIE(Model):
         text_embeddings = util.batched_index_select(text_embeddings, span_indices) * text_mask.unsqueeze(-1).float()
         return text_embeddings, text_mask, sentence_lengths
 
-    def update_span_embeddings(self, span_embeddings, span_mask, top_span_embeddings, top_span_mask, top_span_indices):
-        # TODO(Ulme) Speed this up by tensorizing
-
-        new_span_embeddings = span_embeddings.clone()
-        for sample_nr in range(len(top_span_mask)):
-            for top_span_nr, span_nr in enumerate(top_span_indices[sample_nr]):
-                if top_span_mask[sample_nr, top_span_nr] == 0 or span_mask[sample_nr, span_nr] == 0:
-                    break
-                new_span_embeddings[sample_nr, span_nr] = top_span_embeddings[sample_nr, top_span_nr]
-        return new_span_embeddings
-
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]):
         """
@@ -245,10 +230,9 @@ class DyGIE(Model):
             which are in turn comprised of a list of (start, end) inclusive spans into the
             original document.
         """
-        # TODO(dwadden) which things are already decoded?
         res = {}
         if self._loss_weights["coref"] > 0:
-            res["coref"] = self._coref.decode(output_dict["coref"])# TODO(dwadden) Add type.
+            res["coref"] = self._coref.decode(output_dict["coref"])
         if self._loss_weights["ner"] > 0:
             res["ner"] = self._ner.decode(output_dict["ner"])
         if self._loss_weights["relation"] > 0:
