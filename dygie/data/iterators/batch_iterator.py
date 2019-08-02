@@ -1,5 +1,5 @@
 from collections import deque
-from typing import Iterable, Deque
+from typing import Iterable, Deque, Tuple
 import logging
 import numpy as np
 from random import shuffle as random_shuffle
@@ -24,24 +24,45 @@ class BatchIterator(DataIterator):
     At train time, if `shuffle` is True, shuffle the documents but not the instances within them.
     Then, do the same thing as AllenNLP BasicIterator.
     """
+
+    def __init__(
+        self,
+        shuffle_instances: bool = False,
+        batch_size: int = 32,
+        instances_per_epoch: int = None,
+        max_instances_in_memory: int = None,
+        cache_instances: bool = False,
+        track_epoch: bool = False,
+        maximum_samples_per_batch: Tuple[str, int] = None,
+    ):
+        super().__init__(
+            cache_instances=cache_instances,
+            track_epoch=track_epoch,
+            batch_size=batch_size,
+            instances_per_epoch=instances_per_epoch,
+            max_instances_in_memory=max_instances_in_memory,
+            maximum_samples_per_batch=maximum_samples_per_batch
+        )
+        self._shuffle_instances = shuffle_instances
+
     def _create_batches(self, instances: Iterable[Instance], shuffle: bool) -> Iterable[Batch]:
         # Shuffle the documents if requested.
-        maybe_shuffled_docs = self._shuffle_documents(instances, shuffle)
-        
-        class_weight = self.generate_class_weight(maybe_shuffled_docs, 'ner_labels')
-        class_weight_entity = self.generate_class_weight(maybe_shuffled_docs, 'ner_entity_labels')
-        class_weight_link = self.generate_class_weight(maybe_shuffled_docs, 'ner_link_labels')
-        print(class_weight)
-        print(class_weight_entity)
-        print(class_weight_link)
+        maybe_shuffled_docs = self._shuffle_documents(instances, shuffle, self._shuffle_instances)
 
-        for doc in maybe_shuffled_docs :
-            for ins in doc :
-                ins.fields['metadata'].metadata['ner_labels_class_weight'] = class_weight
-                ins.fields['metadata'].metadata['ner_entity_labels_class_weight'] = class_weight_entity
-                ins.fields['metadata'].metadata['ner_link_labels_class_weight'] = class_weight_link
+        class_weight = self.generate_class_weight(maybe_shuffled_docs, "ner_labels")
+        class_weight_entity = self.generate_class_weight(maybe_shuffled_docs, "ner_entity_labels")
+        class_weight_link = self.generate_class_weight(maybe_shuffled_docs, "ner_link_labels")
+        # print(class_weight)
+        # print(class_weight_entity)
+        # print(class_weight_link)
 
-        for maybe_shuffled_instances in maybe_shuffled_docs :
+        for doc in maybe_shuffled_docs:
+            for ins in doc:
+                ins.fields["metadata"].metadata["ner_labels_class_weight"] = class_weight
+                ins.fields["metadata"].metadata["ner_entity_labels_class_weight"] = class_weight_entity
+                ins.fields["metadata"].metadata["ner_link_labels_class_weight"] = class_weight_link
+
+        for maybe_shuffled_instances in maybe_shuffled_docs:
             for instance_list in self._memory_sized_lists(maybe_shuffled_instances):
                 iterator = iter(instance_list)
                 excess: Deque[Instance] = deque()
@@ -56,12 +77,12 @@ class BatchIterator(DataIterator):
     def generate_class_weight(self, docs, label_field):
         labels = [label for doc in docs for ins in doc for label in ins.fields[label_field].labels]
         label_set = sorted(list(set(labels)))
-        class_weight = compute_class_weight('balanced', label_set, labels)
-        class_weight = {k:v for k, v in zip(label_set, class_weight)}
+        class_weight = compute_class_weight("balanced", label_set, labels)
+        class_weight = {k: v for k, v in zip(label_set, class_weight)}
         return class_weight
 
     @staticmethod
-    def _shuffle_documents(instances, shuffle:bool, shuffle_instances:bool):
+    def _shuffle_documents(instances, shuffle: bool, shuffle_instances: bool):
         """
         Randomly permute the documents for each batch
         """
@@ -73,13 +94,13 @@ class BatchIterator(DataIterator):
             doc_instances = [instances[ix] for ix in ixs]
             sentence_nums = [entry["metadata"]["sentence_num"] for entry in doc_instances]
             assert sentence_nums == list(range(len(doc_instances)))  # Make sure sentences are in order.
-            if shuffle_instances :
+            if shuffle_instances:
                 random_shuffle(doc_instances)
             res.append(doc_instances)
         assert len([x for y in res for x in y]) == len(instances)
         return res
 
     @staticmethod
-    def order_instances(instances) :
-        instances = sorted(instances, key=lambda x : x["metadata"]["sentence_num"])
+    def order_instances(instances):
+        instances = sorted(instances, key=lambda x: x["metadata"]["sentence_num"])
         return instances
