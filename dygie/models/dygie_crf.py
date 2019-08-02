@@ -15,14 +15,14 @@ from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 
 # Import submodules.
 from dygie.models.coref import CorefResolver
-from dygie.models.ner import NERTagger
+from dygie.models.ner_crf_tagger import NERTagger
 from dygie.models.relation_pwc import RelationExtractor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-@Model.register("dygie")
-class DyGIE(Model):
+@Model.register("dygie_crf")
+class DyGIECRF(Model):
     """
     TODO(dwadden) document me.
 
@@ -44,8 +44,8 @@ class DyGIE(Model):
     initializer : ``InitializerApplicator``, optional (default=``InitializerApplicator()``)
         Used to initialize the model parameters.
     regularizer : ``RegularizerApplicator``, optional (default=``None``)
-        If provided, will be used to calculate the regularization penalty during training.
-    display_metrics: ``List[str]``. A list of the metrics that should be printed out during model
+        If provided, will be used to calculate the reglarization penalty during training.
+    display_metrics: ``List[str]``. A list of the metrcs that should be printed out during model
         training.
     """
 
@@ -57,15 +57,15 @@ class DyGIE(Model):
         context_layer: Seq2SeqEncoder,
         modules,
         feature_size: int,
-        max_span_width: int,
         loss_weights: Dict[str, int],
+        max_span_width: int = 20,
         lexical_dropout: float = 0.2,
         use_attentive_span_extractor: bool = True,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None,
         display_metrics: List[str] = None,
     ) -> None:
-        super(DyGIE, self).__init__(vocab, regularizer)
+        super(DyGIECRF, self).__init__(vocab, regularizer)
 
         self._text_field_embedder = text_field_embedder
         self._residual_text_field_embedder = residual_text_field_embedder
@@ -88,9 +88,7 @@ class DyGIE(Model):
             bucket_widths=False,
         )
 
-        self._residual_span_extractor = MaxPoolSpanExtractor(
-            residual_text_field_embedder.get_output_dim(),
-        )
+        self._residual_span_extractor = MaxPoolSpanExtractor(residual_text_field_embedder.get_output_dim())
 
         if use_attentive_span_extractor:
             self._attentive_span_extractor = SelfAttentiveSpanExtractor(
@@ -111,7 +109,7 @@ class DyGIE(Model):
         initializer(self)
 
     @overrides
-    def forward(self, text, spans, ner_labels, ner_entity_labels, ner_link_labels, coref_labels, relation_index, metadata):
+    def forward(self, text, ner_labels, ner_entity_labels, ner_link_labels, metadata):
 
         # Shape: (batch_size, max_sentence_length, embedding_size)
         text_embeddings = self._lexical_dropout(self._text_field_embedder(text))
@@ -122,61 +120,22 @@ class DyGIE(Model):
 
         # Shape: (batch_size, max_sentence_length, encoding_dim)
         contextualized_embeddings = self._context_layer(text_embeddings, text_mask)
-        assert spans.max() < contextualized_embeddings.shape[1]
-
-        if self._attentive_span_extractor is not None:
-            # Shape: (batch_size, num_spans, emebedding_size)
-            attended_span_embeddings = self._attentive_span_extractor(text_embeddings, spans)
-
-        # Shape: (batch_size, num_spans)
-        span_mask = (spans[:, :, 0] >= 0).float()
-        # SpanFields return -1 when they are used as padding. As we do
-        # some comparisons based on span widths when we attend over the
-        # span representations that we generate from these indices, we
-        # need them to be <= 0. This is only relevant in edge cases where
-        # the number of spans we consider after the pruning stage is >= the
-        # total number of spans, because in this case, it is possible we might
-        # consider a masked span.
-        # Shape: (batch_size, num_spans, 2)
-        spans = F.relu(spans.float()).long()
-
-        # Shape: (batch_size, num_spans, 2 * encoding_dim + feature_size)
-        endpoint_span_embeddings = self._endpoint_span_extractor(contextualized_embeddings, spans)
-
-        if self._attentive_span_extractor is not None:
-            # Shape: (batch_size, num_spans, emebedding_size + 2 * encoding_dim + feature_size)
-            span_embeddings = torch.cat([endpoint_span_embeddings, attended_span_embeddings], -1)
-        else:
-            span_embeddings = endpoint_span_embeddings
 
         # Make calls out to the modules to get results.
         output_coref = {"loss": 0}
         output_ner = {"loss": 0}
         output_relation = {"loss": 0}
 
+        ner_labels_dispatcher = {
+            "ner_labels": ner_labels,
+            "ner_entity_labels": ner_entity_labels,
+            "ner_link_labels": ner_link_labels,
+        }
+
         # Make predictions and compute losses for each module
-        output_ner = self._ner(spans, span_mask, span_embeddings, ner_labels, ner_entity_labels, ner_link_labels, metadata)
-
-        ner_scores = output_ner["ner_linked_scores"]
-        ner_scores_dist = output_ner["ner_scores"]
-
-        # Prune and compute span representations for coreference module
-        if self._loss_weights["coref"] > 0:
-            output_coref = self._coref.compute_representations(
-                spans, span_mask, span_embeddings, ner_scores, ner_scores_dist, sentence_lengths, coref_labels, metadata
-            )
-
-        # Prune and compute span representations for relation module
-        if self._loss_weights["relation"] > 0:
-            output_relation = self._relation.compute_representations(
-                spans, span_mask, span_embeddings, ner_scores, sentence_lengths, coref_labels, relation_index, metadata
-            )
-
-        if self._loss_weights["coref"] > 0:
-            output_coref = self._coref.predict_labels(output_coref)
-
-        if self._loss_weights["relation"] > 0:
-            output_relation = self._relation.predict_labels(output_relation)
+        output_ner = self._ner(
+            contextualized_embeddings, text_mask, ner_labels_dispatcher[self._ner.label_namespace], metadata
+        )
 
         if "loss" not in output_coref:
             output_coref["loss"] = 0

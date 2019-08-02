@@ -1,5 +1,5 @@
 from overrides import overrides
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from allennlp.training.metrics.metric import Metric
 import pandas as pd
@@ -13,7 +13,7 @@ class NERMetrics(Metric):
     """
 
     def __init__(self, entity_classes):
-        self._classes = [""] + [e + '_' + str(b) for e in entity_classes for b in [True, False] if e != '']
+        self._classes = entity_classes
         self.reset()
 
     @overrides
@@ -31,9 +31,9 @@ class NERMetrics(Metric):
         for tag in all_tags:
             if tag != "":
                 precision, recall, f1_measure = compute_f1(total_predicted[tag], total_gold[tag], total_matched[tag])
-                precision_key = "precision" + "_" + tag
-                recall_key = "recall" + "_" + tag
-                f1_key = "f1" + "_" + tag
+                precision_key = "precision" + "-" + tag
+                recall_key = "recall" + "-" + tag
+                f1_key = "f1-measure" + "-" + tag
                 all_metrics[precision_key] = precision
                 all_metrics[recall_key] = recall
                 all_metrics[f1_key] = f1_measure
