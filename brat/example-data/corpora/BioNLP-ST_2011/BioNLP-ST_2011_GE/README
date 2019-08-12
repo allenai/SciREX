@@ -1,0 +1,31 @@
+Small sample of data for BioNLP Shared Task 2011 - GENIA event extraction (GE)
+
+
+- Contains the followings
+  - PubMed abstracts with event annotations, which are exactly
+    the same as the data for BioNLP Shared Task 2009.
+  - Full papers with event annotations.
+
+- For license information, please refer to the file, LICENSE.
+
+- For format details, please refer to the shared task homepage.
+  http://sites.google.com/site/bionlpst/
+
+
+History:
+
+23 Dec. 2010: the first revision released.
+	- all the blank letters in the filenames changed to underscore('_').
+	- some argument names changed for consistency:
+	  toLoc, atLoc -> ToLoc, AtLoc
+	- translation events removed for consistency.
+	- other reported annotation problems fixed.
+
+ 9 Dec. 2010: the initial version released.
+
+
+Authors:
+
+BioNLP Shared Task 2011 organizers,
+bionlp-st@googlegroups.com
+http://sites.google.com/site/bionlpst/

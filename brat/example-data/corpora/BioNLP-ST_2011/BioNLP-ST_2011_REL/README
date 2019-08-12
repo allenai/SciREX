@@ -1,0 +1,18 @@
+Small sample of data for BioNLP Shared Task 2011 Supporting Task - Entity Relations (REL)
+
+- Contains 20 PubMed abstracts and their annotations.
+
+- For format details, please refer to the shared task homepage.
+  http://sites.google.com/site/bionlpst/
+
+
+History:
+
+28 Sep 2010: initial version released.
+
+
+Authors:
+
+BioNLP Shared Task 2011 organizers,
+bionlp-st@googlegroups.com
+http://sites.google.com/site/bionlpst/
