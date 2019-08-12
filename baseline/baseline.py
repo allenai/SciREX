@@ -12,6 +12,9 @@ MentionTuple = namedtuple(
     + ",word_pos_in_sentence,word_pos_in_paragraph,word_pos_in_document,n_tokens,n_chars,text",
 )
 
+Mention = namedtuple(
+    "Mention","start,end,text,mention_pos"
+)
 
 def character_similarity_features(span_1: MentionTuple, span_2: MentionTuple, max_ng: int = 3) -> Dict[str, float]:
     w1, w2 = span_1.text, span_2.text
@@ -36,20 +39,13 @@ def character_similarity_features(span_1: MentionTuple, span_2: MentionTuple, ma
 
 def words_between_spans(span_1: MentionTuple, span_2: MentionTuple):
     features = {}
-    features["word_distance_in_document"] = abs(span_1.word_pos_in_document - span_2.word_pos_in_document)
-    # features['word_distance_in_sentence'] = abs(span_1.word_pos_in_sentence - span_2.word_pos_in_sentence)
-    # features['word_distance_in_paragraph'] = abs(span_1.word_pos_in_paragraph - span_2.word_pos_in_paragraph)
-
+    features["word_distance_in_document"] = abs(span_1.start - span_2.start)
     return features
 
 
 def mention_between_spans(span_1: MentionTuple, span_2: MentionTuple):
     features = {}
-    features["mention_distance_in_document"] = abs(span_1.mention_pos_in_document - span_2.mention_pos_in_document)
-    # features['mention_distance_in_sentence'] = abs(span_1.mention_pos_in_sentence - span_2.mention_pos_in_sentence)
-    # features['mention_distance_in_paragraph'] = abs(span_1.mention_pos_in_paragraph - span_2.mention_pos_in_paragraph)
-    # features['mention_paragraph_distance'] = abs(span_1.para_id - span_2.para_id)
-    # features['mention_sentence_distance'] = abs(span_1.sentence_id - span_2.sentence_id)
+    features["mention_distance_in_document"] = abs(span_1.mention_pos - span_2.mention_pos)
     return features
 
 
@@ -58,10 +54,6 @@ def get_all_span_pair_features(span_1: MentionTuple, span_2: MentionTuple):
     features.update(words_between_spans(span_1, span_2))
     features.update(mention_between_spans(span_1, span_2))
     features.update(character_similarity_features(span_1, span_2))
-    features["n_chars_1"] = span_1.n_chars
-    features["n_chars_2"] = span_2.n_chars
-    features["n_tokens_1"] = span_1.n_tokens
-    features["n_tokens_2"] = span_2.n_tokens
     return features
 
 

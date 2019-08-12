@@ -7,7 +7,7 @@ fi
 export BERT_VOCAB=$BERT_BASE_FOLDER/scivocab_uncased.vocab
 export BERT_WEIGHTS=$BERT_BASE_FOLDER/scibert_scivocab_uncased.tar.gz
 
-export CONFIG_FILE=dygie/training_config/pwc_config_crf.jsonnet
+export CONFIG_FILE=dygie/training_config/pwc_config.jsonnet
 
 export CUDA_DEVICE=$CUDA_DEVICE
 
@@ -27,6 +27,6 @@ export TRAIN_PATH=$DATA_BASE_PATH/train.json:$TRAIN_DATASETS
 export DEV_PATH=$DATA_BASE_PATH/dev.json:pwc
 export TEST_PATH=$DATA_BASE_PATH/test.json:pwc
 
-export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_dygie_crf/$1}
+export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_dygie_span/$1}
 
 allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $CONFIG_FILE

@@ -109,7 +109,7 @@ class DyGIECRF(Model):
         initializer(self)
 
     @overrides
-    def forward(self, text, ner_labels, ner_entity_labels, ner_link_labels, metadata):
+    def forward(self, text, ner_labels, ner_entity_labels, ner_link_labels, ner_is_entity_labels, metadata):
 
         # Shape: (batch_size, max_sentence_length, embedding_size)
         text_embeddings = self._lexical_dropout(self._text_field_embedder(text))
@@ -130,6 +130,7 @@ class DyGIECRF(Model):
             "ner_labels": ner_labels,
             "ner_entity_labels": ner_entity_labels,
             "ner_link_labels": ner_link_labels,
+            "ner_is_entity_labels" : ner_is_entity_labels
         }
 
         # Make predictions and compute losses for each module

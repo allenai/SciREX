@@ -111,3 +111,8 @@ Testing.ipynb
 notebooks/Testbed*
 .vscode
 !dygie/data
+
+*.json
+*.tar.gz
+scibert/
+model_data/

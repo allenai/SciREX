@@ -3,4 +3,4 @@
 3. [] Implement sliding window
 4. [] Implement paragraph pairs
 5. [x] Remove Material that is False / Reduce class weight
-6. [] Implement random batches
+6. [x] Implement random batches

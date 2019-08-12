@@ -83,7 +83,6 @@ class CorefResolver(Model):
         spans_batched: torch.IntTensor,
         span_mask_batched,
         span_embeddings_batched,
-        residual_span_embeddings_batched,
         span_scores_batched,
         span_ner_scores_dist_batched,
         sentence_lengths,
@@ -97,9 +96,7 @@ class CorefResolver(Model):
         Important: This function assumes that sentences are going to be passed in in sorted order,
         from the same document.
         """
-        # TODO(dwadden) How to handle case where only one span from a cluster makes it into the
-        # minibatch? Should I get rid of the cluster?
-        # TODO(dwadden) Write quick unit tests for correctness, time permitting.
+
         span_ix = span_mask_batched.view(-1).nonzero().squeeze()  # Indices of the spans to keep.
         spans = self._flatten_spans(span_ix, spans_batched, sentence_lengths)
 
@@ -239,9 +236,9 @@ class CorefResolver(Model):
             )
             # Now, compute the loss using the negative marginal log-likelihood.
             output_dict["loss"] = F.binary_cross_entropy(
-                torch.sigmoid(coreference_scores),
+                coreference_scores,
                 gold_antecedent_labels,
-                weight=linked_indicator + 20 * gold_antecedent_labels,
+                weight=linked_indicator + 2 * gold_antecedent_labels,
             )
 
             true_spans_with_coref = (coref_labels.sum(-1) > 0).long().squeeze(0)
@@ -557,6 +554,8 @@ class CorefResolver(Model):
         )
         antecedent_scores = self._score_mixer(antecedent_scores).squeeze(-1)
         antecedent_scores += antecedent_log_mask
+
+        antecedent_scores = torch.sigmoid(antecedent_scores) * kl_score
 
         return antecedent_scores
 

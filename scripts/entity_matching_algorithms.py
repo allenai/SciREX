@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List
 from fuzzywuzzy import fuzz
 
 import re
