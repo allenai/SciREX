@@ -1,4 +1,4 @@
-from cite2vec.cite2vec.utils.grobid_util import *
+from scripts.preprocessing.grobid_util import *
 
 import os
 BASEPATH = os.getenv('RESULT_EXTRACTION_BASEPATH', '.')

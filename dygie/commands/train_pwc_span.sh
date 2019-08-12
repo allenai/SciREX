@@ -4,8 +4,8 @@ if [ $# -eq  0 ]
     exit 1
 fi
 
-export BERT_VOCAB=/net/nfs.corp/s2-research/scibert/scivocab_uncased.vocab
-export BERT_WEIGHTS=/net/nfs.corp/s2-research/scibert/scibert_scivocab_uncased.tar.gz
+export BERT_VOCAB=$BERT_BASE_FOLDER/scivocab_uncased.vocab
+export BERT_WEIGHTS=$BERT_BASE_FOLDER/scibert_scivocab_uncased.tar.gz
 
 export CONFIG_FILE=dygie/training_config/pwc_config.jsonnet
 
@@ -20,11 +20,13 @@ export NUMPY_SEED=$NUMPY_SEED
 
 export IS_LOWERCASE=true
 
-export ERC_DATA_BASE_PATH=data/pwc_split_on_labeled
-export TRAIN_PATH=$ERC_DATA_BASE_PATH/train.jsonl
-export DEV_PATH=$ERC_DATA_BASE_PATH/dev.jsonl
-export TEST_PATH=$ERC_DATA_BASE_PATH/test.jsonl
+export DATA_BASE_PATH=model_data/dataset_readers_paths
 
-export OUTPUT_BASE_PATH=outputs/pwc_outputs/experiment_dygie/$1/`date "+%Y%m%d-%H%M%S"`
+export TRAIN_DATASETS=pwc
+export TRAIN_PATH=$DATA_BASE_PATH/train.json:$TRAIN_DATASETS
+export DEV_PATH=$DATA_BASE_PATH/dev.json:pwc
+export TEST_PATH=$DATA_BASE_PATH/test.json:pwc
+
+export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_dygie_span/$1}
 
 allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $CONFIG_FILE

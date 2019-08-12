@@ -1,31 +1,14 @@
 import os
 
-BASEPATH = os.getenv("RESULT_EXTRACTION_BASEPATH", ".")
-
 import json
 import pandas as pd
 from tqdm import tqdm
 from allennlp.data.dataset_readers.dataset_utils.span_utils import bioul_tags_to_spans
-from collections import namedtuple
-
-from typing import List, Dict
 
 tqdm.pandas()
 
-available_entity_types_sciERC = ["Material", "Metric", "Task", "Generic", "OtherScientificTerm", "Method"]
-map_available_entity_to_true = {"Material": "dataset", "Metric": "metric", "Task": "task", "Method": "model_name"}
+from scripts.entity_utils import available_entity_types_sciERC, BASEPATH
 
-from scripts.entity_matching_algorithms import *
-
-map_true_entity_to_available = {v: k for k, v in map_available_entity_to_true.items()}
-
-used_entities = list(map_available_entity_to_true.keys())
-true_entities = list(map_available_entity_to_true.values())
-
-Relation = namedtuple("Relation", used_entities + ['score'])
-
-from itertools import combinations, product
-binary_relations = list(combinations(used_entities, 2))
 
 def get_spans(taglist, wordlist):
     entities = {k: [] for k in available_entity_types_sciERC}
@@ -80,9 +63,7 @@ def get_pwc_data_and_output(pwc_doc_file: str, pwc_sentence_file: str, pwc_predi
     pwc_df = load_pwc_full_text(pwc_doc_file)
     pwc_sentences = load_pwc_sentence_predictions(pwc_sentence_file, pwc_prediction_file)
     pwc_sentences = (
-        pwc_sentences.groupby(["doc_id"], as_index=False)
-        .aggregate(lambda x: tuple(x))
-        .apply(extract_entites_from_document, axis=1)
+        pwc_sentences.groupby(["doc_id"], as_index=False).aggregate(tuple).apply(extract_entites_from_document, axis=1)
     )
 
     ids_to_keep = open(os.path.join(BASEPATH, "data/train_doc_ids.txt")).read().split("\n") + open(

@@ -103,8 +103,7 @@ function(p) {
         [if p.use_bert then "bert"]: {
             type: "bert-pretrained",
             pretrained_model: std.extVar("BERT_WEIGHTS"),
-            requires_grad: 'none'
-            // top_layer_only: false
+            requires_grad: p.bert_fine_tune
         }
     }
   },
@@ -139,7 +138,6 @@ function(p) {
     type: p.dataset_reader,
     token_indexers: token_indexers,
     max_span_width: p.max_span_width,
-    context_width: p.context_width
   },
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
@@ -199,5 +197,6 @@ function(p) {
     validation_metric: validation_metrics[p.target],
     learning_rate_scheduler: p.learning_rate_scheduler,
     optimizer: p.optimizer,
+    num_serialized_models_to_keep: 1
   }
 }

@@ -12,6 +12,7 @@ from collections import namedtuple
 LabelSpan = namedtuple("Span", ["start", "end", "token_start", "token_end", "entity", "links"])
 
 from scripts.analyse_pwc_entity_results import *
+from scripts.entity_utils import *
 
 def process_folder(folder: str):
     span_labels = {}

@@ -15,7 +15,7 @@ from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 
 # Import submodules.
 from dygie.models.coref import CorefResolver
-from dygie.models.ner import NERTagger
+from dygie.models.ner_slim import NERTagger
 from dygie.models.relation_pwc import RelationExtractor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -88,9 +88,7 @@ class DyGIE(Model):
             bucket_widths=False,
         )
 
-        self._residual_span_extractor = MaxPoolSpanExtractor(
-            residual_text_field_embedder.get_output_dim(),
-        )
+        self._residual_span_extractor = MaxPoolSpanExtractor(residual_text_field_embedder.get_output_dim())
 
         if use_attentive_span_extractor:
             self._attentive_span_extractor = SelfAttentiveSpanExtractor(
@@ -111,7 +109,15 @@ class DyGIE(Model):
         initializer(self)
 
     @overrides
-    def forward(self, text, spans, ner_labels, ner_entity_labels, ner_link_labels, coref_labels, relation_index, metadata):
+    def forward(
+        self,
+        text,
+        spans,
+        ner_labels,
+        coref_labels,
+        relation_index,
+        metadata,
+    ):
 
         # Shape: (batch_size, max_sentence_length, embedding_size)
         text_embeddings = self._lexical_dropout(self._text_field_embedder(text))
@@ -155,10 +161,12 @@ class DyGIE(Model):
         output_relation = {"loss": 0}
 
         # Make predictions and compute losses for each module
-        output_ner = self._ner(spans, span_mask, span_embeddings, ner_labels, ner_entity_labels, ner_link_labels, metadata)
+        output_ner = self._ner(
+            spans, span_mask, span_embeddings, ner_labels, metadata
+        )
 
         ner_scores = output_ner["ner_linked_scores"]
-        ner_scores_dist = output_ner["ner_scores"]
+        ner_scores_dist = output_ner["ner_entity_scores"]
 
         # Prune and compute span representations for coreference module
         if self._loss_weights["coref"] > 0:

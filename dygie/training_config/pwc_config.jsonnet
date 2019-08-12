@@ -2,6 +2,11 @@
 
 local template = import "template.libsonnet";
 
+local stringToBool(s) =
+  if s == "true" then true
+  else if s == "false" then false
+  else error "invalid boolean: " + std.manifestJson(s);
+
 ////////////////////
 
 // Set options.
@@ -10,7 +15,6 @@ local params = {
   // Primary prediction target. Watch metrics associated with this target.
   target: "ner",
   dataset_reader: 'pwc_json',
-  // If debugging, don't load expensive embedding files.
   debug: false,
 
   // Specifies the token-level features that will be created.
@@ -18,11 +22,8 @@ local params = {
   use_char: true,
   use_attentive_span_extractor: true,
   use_bert: true,
-  use_lstm: true,
-  rel_prop: 0,
-  context_width: 3,
-  rel_prop_dropout_A: 0.0,
-  rel_prop_dropout_f: 0.0,
+  use_lstm: stringToBool(std.extVar("USE_LSTM")),
+  bert_fine_tune: std.extVar("BERT_FINE_TUNE"),
  
   // Specifies the model parameters.
   lstm_hidden_size: 200,
@@ -33,11 +34,12 @@ local params = {
   max_span_width: 8,
   feedforward_dropout: 0.4,
   lexical_dropout: 0.5,
+  balancing_strategy: std.extVar('BALANCING_STRATEGY'),
   lstm_dropout: 0.4,
   loss_weights: {          // Loss weights for the modules.
     ner: 1.0,
     relation: 0.0,
-    coref: 1.0
+    coref: 0.0
   },
 
   // Coref settings.
@@ -51,17 +53,14 @@ local params = {
   // Model training
   decoding_type: "all_decode",
   batch_size: 10,
-  num_epochs: 250,
+  num_epochs: 100,
   shuffle_instances: true,
-  patience: 10,
+  patience: 8,
   optimizer: {
     type: "sgd",
     lr: 0.01,
     momentum: 0.9,
     nesterov: true,
-    //parameter_groups: [
-    //  [["_text_field_embedder"], {"lr": 1e-8}],
-    //],
   },
   learning_rate_scheduler:  {
     type: "reduce_on_plateau",
