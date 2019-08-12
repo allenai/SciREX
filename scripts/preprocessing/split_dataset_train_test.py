@@ -2,6 +2,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import click
 
+import os
+BASEPATH = os.getenv('RESULT_EXTRACTION_BASEPATH', '.')
+
 @click.command()
 @click.option("--input_file")
 def split_dataset(input_file) :
@@ -10,15 +13,15 @@ def split_dataset(input_file) :
     ids = list(df.s2_paper_id.unique())
     train_ids, test_ids = train_test_split(ids, test_size=0.2, random_state=1)
     train_ids, dev_ids = train_test_split(train_ids, test_size=0.125, random_state=1)
-    f = open('data/train_doc_ids.txt', 'w')
+    f = open(os.path.join(BASEPATH, 'data/train_doc_ids.txt'), 'w')
     f.write('\n'.join(train_ids))
     f.close()
     
-    f = open('data/dev_doc_ids.txt', 'w')
+    f = open(os.path.join(BASEPATH, 'data/dev_doc_ids.txt'), 'w')
     f.write('\n'.join(dev_ids))
     f.close()
     
-    f = open('data/test_doc_ids.txt', 'w')
+    f = open(os.path.join(BASEPATH, 'data/test_doc_ids.txt'), 'w')
     f.write('\n'.join(test_ids))
     f.close()
     
