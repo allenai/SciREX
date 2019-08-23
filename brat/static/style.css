@@ -243,4 +243,9 @@ td.support-no {
   font-style: normal;
   font-weight: bold;
   src: local('Astloch Bold'), local('Astloch-Bold'), url('fonts/Astloch-Bold.ttf') format('truetype');
+
+}
+
+text {
+  font-size: 20px;
 }

@@ -33,17 +33,16 @@ local params = {
   feature_size: 20,
   feedforward_layers: 2,
   feedforward_dim: 150,
-  max_span_width: 8,
   feedforward_dropout: 0.4,
   lexical_dropout: 0.5,
   lstm_dropout: 0.4,
   loss_weights: {          // Loss weights for the modules.
     ner: 1.0,
-    relation: 0.0,
+    relation: 1.0,
     coref: 0.0
   },
 
-  label_namespace: "ner_labels",
+  label_namespace: "ner_entity_labels",
   // Coref settings.
   coref_spans_per_word: 0.1,
   coref_max_antecedents: 100,
@@ -55,22 +54,17 @@ local params = {
   // Model training
   batch_size: 10,
   num_epochs: 100,
-  shuffle_instances: true,
+  shuffle_instances: false,
   patience: 10,
   optimizer: {
     type: "adam",
-    lr: 0.001,
-    // momentum: 0.9,
-    // nesterov: true,
-    //parameter_groups: [
-    //  [["_text_field_embedder"], {"lr": 1e-8}],
-    //],
+    lr: 0.001
   },
   learning_rate_scheduler:  {
     type: "reduce_on_plateau",
     factor: 0.5,
     mode: "max",
-    patience: 8
+    patience: 5
   }
 };
 

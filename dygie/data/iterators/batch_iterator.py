@@ -51,12 +51,12 @@ class BatchIterator(DataIterator):
 
         class_weights = {}
         sample_prob = {}
-        for field in ["ner_labels"]:
+        for field in ["span_entity_labels"]:
             class_weights[field], sample_prob[field] = self.generate_class_weight(maybe_shuffled_docs, field)
 
         for doc in maybe_shuffled_docs:
             for ins in doc:
-                for field in ["ner_labels"]:
+                for field in ["span_entity_labels"]:
                     ins.fields["metadata"].metadata[field + "_class_weight"] = class_weights[field]
                     ins.fields["metadata"].metadata[field + "_sample_prob"] = sample_prob[field]
 
@@ -75,7 +75,7 @@ class BatchIterator(DataIterator):
         labels = [label for doc in docs for ins in doc for label in ins.fields[label_field].labels]
         label_set = sorted(list(set(labels)))
         class_weight = compute_class_weight("balanced", label_set, labels)
-        class_weight = {k: v**(1/4) for k, v in zip(label_set, class_weight)}
+        class_weight = {k: v if v > 1 else v**(1/2) for k, v in zip(label_set, class_weight)}
 
         c = dict(Counter([l for l in labels if l != '']))
         count_non_null = [v for k, v in c.items() if k != '']
@@ -93,8 +93,9 @@ class BatchIterator(DataIterator):
         shuffled = np.random.permutation(np.unique(doc_keys)) if shuffle else np.unique(doc_keys)
         res = []
         for doc in shuffled:
-            ixs = np.nonzero(doc_keys == doc)[0].tolist()
-            doc_instances = [instances[ix] for ix in ixs]
+            # ixs = np.nonzero(doc_keys == doc)[0].tolist()
+            # doc_instances = [instances[ix] for ix in ixs]
+            doc_instances = [ins for ins in instances if ins['metadata']['doc_key'] == doc]
             sentence_nums = [entry["metadata"]["sentence_num"] for entry in doc_instances]
             assert sentence_nums == list(range(len(doc_instances)))  # Make sure sentences are in order.
             if shuffle_instances:

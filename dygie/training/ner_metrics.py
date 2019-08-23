@@ -100,7 +100,7 @@ class NERMentionMetrics(Metric):
         )
         all_metrics["precision"] = precision
         all_metrics["recall"] = recall
-        all_metrics["f1"] = f1_measure
+        all_metrics["f1-measure"] = f1_measure
         if reset:
             self.reset()
         return all_metrics

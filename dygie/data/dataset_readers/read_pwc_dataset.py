@@ -1,3 +1,5 @@
+import sys
+sys.path.insert(0, '')
 from scripts.entity_utils import *
 from itertools import combinations
 import numpy as np
@@ -8,9 +10,16 @@ is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
 
 def process_rows_for_doc(rows):
     doc_id = rows.name
-    rows = rows.sort_values(by="para_num")
+    try :
+        rows = rows.sort_values(by=["para_num", "sentence_num"])
+    except :
+        breakpoint()
     n_paragraphs = rows["para_num"].max() + 1
+
+    n_sections = rows['section_id'].max() + 1
+    sections = [0 for _ in range(n_sections)]
     paragraphs = [0 for _ in range(n_paragraphs)]
+
     words = []
     ner = []
     relations = []
@@ -18,6 +27,8 @@ def process_rows_for_doc(rows):
 
     rows = rows.to_dict("records")
     coreference = {k: [] for e in used_entities for k in rows[0][e + "_Rel"]}
+
+    section_heads = [0] * n_sections
 
     for index, row in enumerate(rows):
         entities = [
@@ -28,6 +39,11 @@ def process_rows_for_doc(rows):
         words += row["words"]
         ner += entities
         paragraphs[row["para_num"]] += len(row["words"])
+        sections[row['section_id']] += len(row['words'])
+
+        if row['para_id'] == 0 and row['sentence_id'] == 0 :
+            section_heads[row['section_id']] = row['words']
+
 
         for e in entities:
             for k in e[-1].links:
@@ -50,6 +66,11 @@ def process_rows_for_doc(rows):
 
     paragraphs = list(zip(list(para_starts), list(para_ends)))
 
+    section_ends = np.cumsum(sections)
+    section_starts = section_ends - np.array(sections)
+
+    sections = list(zip(list(section_starts), list(section_ends)))
+
     for e in ner:
         assert any([is_x_in_y(e, x) for x in paragraphs])
 
@@ -57,6 +78,8 @@ def process_rows_for_doc(rows):
 
     return {
         "paragraphs": paragraphs,
+        "sections" : sections,
+        "section_heads" : section_heads,
         "words": words,
         "ner": ner,
         "coref": coreference,

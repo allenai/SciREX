@@ -1,4 +1,4 @@
--e git+https://github.com/successar/allennlp@master#egg=allennlp
+git+https://github.com/successar/allennlp@master#egg=allennlp
 torch==1.1.0
 overrides==1.9
 numpy==1.16.4

@@ -16,7 +16,7 @@ from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 # Import submodules.
 from dygie.models.coref import CorefResolver
 from dygie.models.ner_slim import NERTagger
-from dygie.models.relation_pwc import RelationExtractor
+# from dygie.models.relation_pwc import RelationExtractor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

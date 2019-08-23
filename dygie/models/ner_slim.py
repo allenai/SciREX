@@ -137,9 +137,9 @@ class NERTagger(Model):
                 self._class_weight[self._label_map[k]] = v
 
             self._registered_loss_modifiers = True
-
+            
         class_weight = None
-        if self._balancing_strategy == 'sample' :
+        if self._balancing_strategy == 'sample' :            
             keep_element = torch.bernoulli(self._sample_prob[ner_labels_flat]).byte()
             ner_scores_flat = ner_scores_flat[keep_element]
             ner_labels_flat = ner_labels_flat[keep_element]

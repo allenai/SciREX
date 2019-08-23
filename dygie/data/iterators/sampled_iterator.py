@@ -94,8 +94,6 @@ class BucketSampleIterator(DataIterator):
                  cache_instances: bool = False,
                  track_epoch: bool = False,
                  maximum_samples_per_batch: Tuple[str, int] = None) -> None:
-        if not sorting_keys:
-            raise ConfigurationError("BucketIterator requires sorting_keys to be specified")
 
         super().__init__(cache_instances=cache_instances,
                          track_epoch=track_epoch,
@@ -112,10 +110,11 @@ class BucketSampleIterator(DataIterator):
         for instance_list in self._memory_sized_lists(instances):
             instance_list = [ins for ins in instance_list if random.random() < ins['metadata'].metadata['keep_prob']]
 
-            instance_list = sort_by_padding(instance_list,
-                                            self._sorting_keys,
-                                            self.vocab,
-                                            self._padding_noise)
+            if len(self._sorting_keys) == 0 :
+                instance_list = sort_by_padding(instance_list,
+                                                self._sorting_keys,
+                                                self.vocab,
+                                                self._padding_noise)
 
             
 

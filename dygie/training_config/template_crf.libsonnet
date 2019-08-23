@@ -11,7 +11,7 @@ function(p) {
 
   local display_metrics = {
     "ner": ["ner_precision", "ner_recall", "ner_f1-measure"],
-    "rel": ["rel_precision", "rel_recall", "rel_f1", "rel_span_recall"],
+    "rel": ["rel_precision", "rel_recall", "rel_f1", "rel_threshold"],
     "coref": ["coref_precision", "coref_recall", "coref_f1", "coref_mention_recall"]
   },
 
@@ -43,11 +43,8 @@ function(p) {
   ),
   local context_encoder_dim = if p.use_lstm then 2 * p.lstm_hidden_size else token_embedding_dim,
   local endpoint_span_emb_dim = 2 * context_encoder_dim + p.feature_size,
-  local attended_span_emb_dim = if p.use_attentive_span_extractor then token_embedding_dim else 0,
-  local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim, // + char_n_filters,
-  local pair_emb_dim = 3 * span_emb_dim,
-  local relation_scorer_dim = pair_emb_dim,
-  local coref_scorer_dim = pair_emb_dim + p.feature_size,
+  local attended_span_emb_dim = if p.use_attentive_span_extractor then context_encoder_dim else 0,
+  local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim, 
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -137,7 +134,7 @@ function(p) {
   dataset_reader: {
     type: p.dataset_reader,
     token_indexers: token_indexers,
-    max_span_width: p.max_span_width,
+    max_span_width: 20,
   },
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
@@ -152,7 +149,6 @@ function(p) {
     lexical_dropout: p.lexical_dropout,
     feature_size: p.feature_size,
     use_attentive_span_extractor: p.use_attentive_span_extractor,
-    max_span_width: p.max_span_width,
     display_metrics: display_metrics[p.target],
     context_layer: if p.use_lstm then lstm_context_encoder else {
       type: "pass_through",
@@ -162,7 +158,7 @@ function(p) {
       coref: {
         spans_per_word: p.coref_spans_per_word,
         max_antecedents: p.coref_max_antecedents,
-        antecedent_feedforward: make_feedforward(coref_scorer_dim),
+        antecedent_feedforward: make_feedforward(3*span_emb_dim + p.feature_size),
         initializer: module_initializer
       },
       ner: {
@@ -173,7 +169,17 @@ function(p) {
       },
       relation: {
         spans_per_word: p.coref_spans_per_word,
-        antecedent_feedforward: make_feedforward(coref_scorer_dim),
+        antecedent_feedforward: make_feedforward(3*(span_emb_dim + 1 + 4) + p.feature_size),
+        initializer: module_initializer
+      },
+      link_classifier: {
+        mention_feedforward: make_feedforward(span_emb_dim + 1 + 4),
+        label_namespace: "span_link_labels",
+        initializer: module_initializer
+      },
+      entity_classifier: {
+        mention_feedforward: make_feedforward(span_emb_dim),
+        label_namespace: "span_entity_labels",
         initializer: module_initializer
       }
     }
@@ -181,7 +187,7 @@ function(p) {
   iterator: {
     type: "ie_batch",
     batch_size: p.batch_size,
-    shuffle_instances: p.shuffle_instances
+    shuffle_instances: false
 
   },
   validation_iterator: {
@@ -197,6 +203,7 @@ function(p) {
     validation_metric: validation_metrics[p.target],
     learning_rate_scheduler: p.learning_rate_scheduler,
     optimizer: p.optimizer,
-    num_serialized_models_to_keep: 1
+    num_serialized_models_to_keep: 1,
+    should_log_learning_rate: true
   }
 }

@@ -9,11 +9,8 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import Field, TextField, LabelField, MetadataField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
-from allennlp.data.tokenizers import Tokenizer, WordTokenizer
+from allennlp.data.tokenizers import Tokenizer, WordTokenizer, Token
 from itertools import combinations
-from random import shuffle
-import random
-from collections import Counter
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -36,7 +33,7 @@ class PwCLinkerAllPairsReader(DatasetReader):
         token_indexers: Dict[str, TokenIndexer] = None,
         lazy: bool = False,
         sample_train: bool = False,
-        type: str = None
+        type: str = None,
     ) -> None:
         super().__init__(lazy)
         self.label_space = (0, 1)
@@ -51,7 +48,7 @@ class PwCLinkerAllPairsReader(DatasetReader):
 
         logger.info("Loaded all pairs from %s", file_path)
         for p in pairs:
-            yield self.text_to_instance(p[0], p[1], p[2], p[3])
+            yield self.text_to_instance(*p)
 
     def generate_pairs(self, file_path):
         pairs = []
@@ -59,18 +56,25 @@ class PwCLinkerAllPairsReader(DatasetReader):
             logger.info("Reading Coref instances from jsonl dataset at: %s", file_path)
             for line in snli_file:
                 ins = json.loads(line)
-                entities = [
-                    (x["span"][0], x["span"][1], tuple(x["label"].split("_")[i] for i in self.label_space))
-                    for x in ins["prediction"]
-                ]
-                words = ins["words"]
-                for e1, e2 in combinations(entities, 2):
-                    w1 = " ".join(words[e1[0] : e1[1]])
-                    w2 = " ".join(words[e2[0] : e2[1]])
-                    gold_label = None
-                    if e1[2] == e2[2]:
-                        metadata = {"span_premise": e1, "span_hypothesis": e2, "doc_id": ins["doc_id"]}
-                        pairs.append((w1, w2, gold_label, metadata))
+                for field in ["prediction", "gold"]:
+                    entities = [
+                        (x["span"][0], x["span"][1], x["label"].split("_")[1])
+                        for x in ins[field]
+                    ]
+                    words = ins["words"]
+                    for e1, e2 in combinations(entities, 2):
+                        w1 = " ".join(words[e1[0] : e1[1]])
+                        w2 = " ".join(words[e2[0] : e2[1]])
+                        t1, t2 = e1[2], e2[2]
+                        gold_label = None
+                        if t1 == t2:
+                            metadata = {
+                                "span_premise": e1,
+                                "span_hypothesis": e2,
+                                "doc_id": ins["doc_id"],
+                                "field": field,
+                            }
+                            pairs.append((w1, w2, t1, t2, gold_label, metadata))
 
         return pairs
 
@@ -79,12 +83,15 @@ class PwCLinkerAllPairsReader(DatasetReader):
         self,  # type: ignore
         premise: str,
         hypothesis: str,
+        type_premise: str,
+        type_hypothesis: str,
         label: str = None,
         metadata: Dict[str, Any] = None,
     ) -> Instance:
         fields: Dict[str, Field] = {}
-        premise_tokens = self._tokenizer.tokenize(premise)
-        hypothesis_tokens = self._tokenizer.tokenize(hypothesis)
+        premise_tokens = [Token(type_premise)] + self._tokenizer.tokenize(premise)
+        hypothesis_tokens = [Token(type_hypothesis)] + self._tokenizer.tokenize(hypothesis)
+
         fields["premise"] = TextField(premise_tokens, self._token_indexers)
         fields["hypothesis"] = TextField(hypothesis_tokens, self._token_indexers)
         if label:
@@ -94,7 +101,7 @@ class PwCLinkerAllPairsReader(DatasetReader):
             {
                 "premise_tokens": [x.text for x in premise_tokens],
                 "hypothesis_tokens": [x.text for x in hypothesis_tokens],
-                "keep_prob" : 1.0
+                "keep_prob": 1.0,
             }
         )
         fields["metadata"] = MetadataField(metadata)

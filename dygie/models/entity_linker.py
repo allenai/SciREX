@@ -19,15 +19,18 @@ class EntityLinker(Model):
     """
     Copied from Allennlp : Decomposable Attention
     """
-    def __init__(self, vocab: Vocabulary,
-                 text_field_embedder: TextFieldEmbedder,
-                 attend_feedforward: FeedForward,
-                 compare_feedforward: FeedForward,
-                 aggregate_feedforward: FeedForward,
-                 premise_encoder: Optional[Seq2SeqEncoder] = None,
-                 hypothesis_encoder: Optional[Seq2SeqEncoder] = None,
-                 initializer: InitializerApplicator = InitializerApplicator(),
-                 regularizer: Optional[RegularizerApplicator] = None) -> None:
+
+    def __init__(
+        self,
+        vocab: Vocabulary,
+        text_field_embedder: TextFieldEmbedder,
+        attend_feedforward: FeedForward,
+        compare_feedforward: FeedForward,
+        aggregate_feedforward: FeedForward,
+        encoder: Optional[Seq2SeqEncoder] = None,
+        initializer: InitializerApplicator = InitializerApplicator(),
+        regularizer: Optional[RegularizerApplicator] = None,
+    ) -> None:
         super(EntityLinker, self).__init__(vocab, regularizer)
 
         self._text_field_embedder = text_field_embedder
@@ -35,30 +38,27 @@ class EntityLinker(Model):
         self._matrix_attention = DotProductMatrixAttention()
         self._compare_feedforward = TimeDistributed(compare_feedforward)
         self._aggregate_feedforward = aggregate_feedforward
-        self._premise_encoder = premise_encoder
-        self._hypothesis_encoder = hypothesis_encoder or premise_encoder
+        self._encoder = encoder
 
         self._num_labels = vocab.get_vocab_size(namespace="labels")
 
-        check_dimensions_match(text_field_embedder.get_output_dim(), attend_feedforward.get_input_dim(),
-                               "text field embedding dim", "attend feedforward input dim")
-        check_dimensions_match(aggregate_feedforward.get_output_dim(), self._num_labels,
-                               "final output dimension", "number of labels")
-
         self._loss = torch.nn.CrossEntropyLoss()
-        self._label_names = [None]*self._num_labels
-        for k, v in vocab.get_token_to_index_vocabulary('labels').items() :
+        self._label_names = [None] * self._num_labels
+        for k, v in vocab.get_token_to_index_vocabulary("labels").items():
             self._label_names[v] = k
 
         self._f1 = BinaryThresholdF1()
 
         initializer(self)
 
-    def forward(self,  # type: ignore
-                premise: Dict[str, torch.LongTensor],
-                hypothesis: Dict[str, torch.LongTensor],
-                label: torch.IntTensor = None,
-                metadata: List[Dict[str, Any]] = None) -> Dict[str, torch.Tensor]:
+    def forward(
+        self,  # type: ignore
+        premise: Dict[str, torch.LongTensor],
+        hypothesis: Dict[str, torch.LongTensor],
+        pair_features: torch.Tensor = None,
+        label: torch.IntTensor = None,
+        metadata: List[Dict[str, Any]] = None,
+    ) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
         Parameters
@@ -87,13 +87,12 @@ class EntityLinker(Model):
         """
         embedded_premise = self._text_field_embedder(premise)
         embedded_hypothesis = self._text_field_embedder(hypothesis)
+
         premise_mask = get_text_field_mask(premise).float()
         hypothesis_mask = get_text_field_mask(hypothesis).float()
 
-        if self._premise_encoder:
-            embedded_premise = self._premise_encoder(embedded_premise, premise_mask)
-        if self._hypothesis_encoder:
-            embedded_hypothesis = self._hypothesis_encoder(embedded_hypothesis, hypothesis_mask)
+        embedded_premise = self._encoder(embedded_premise, premise_mask)
+        embedded_hypothesis = self._encoder(embedded_hypothesis, hypothesis_mask)
 
         projected_premise = self._attend_feedforward(embedded_premise)
         projected_hypothesis = self._attend_feedforward(embedded_hypothesis)
@@ -116,17 +115,17 @@ class EntityLinker(Model):
         compared_premise = self._compare_feedforward(premise_compare_input)
         compared_premise = compared_premise * premise_mask.unsqueeze(-1)
         # Shape: (batch_size, compare_dim)
-        compared_premise = compared_premise.mean(dim=1)
+        compared_premise = compared_premise.sum(dim=1)
 
         compared_hypothesis = self._compare_feedforward(hypothesis_compare_input)
         compared_hypothesis = compared_hypothesis * hypothesis_mask.unsqueeze(-1)
         # Shape: (batch_size, compare_dim)
-        compared_hypothesis = compared_hypothesis.mean(dim=1)
+        compared_hypothesis = compared_hypothesis.sum(dim=1)
 
-        aggregate_input = torch.cat([compared_premise, compared_hypothesis], dim=-1)
+        aggregate_input = torch.cat([compared_premise, compared_hypothesis, pair_features], dim=-1)
         label_logits = self._aggregate_feedforward(aggregate_input)
 
-        aggregate_input = torch.cat([compared_hypothesis, compared_premise], dim=-1)
+        aggregate_input = torch.cat([compared_hypothesis, compared_premise, pair_features], dim=-1)
         label_logits += self._aggregate_feedforward(aggregate_input)
 
         label_logits /= 2
@@ -145,10 +144,11 @@ class EntityLinker(Model):
 
         return output_dict
 
-    def decode(self, output_dict: Dict[str, torch.Tensor]) :
-        output_dict['label_probs'] = list(output_dict['label_probs'].detach().cpu().numpy())
+    def decode(self, output_dict: Dict[str, torch.Tensor]):
+        output_dict["label_probs"] = list(output_dict["label_probs"].detach().cpu().numpy())
         return output_dict
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         metrics = self._f1.get_metric(reset)
+        metrics = {k if not k.startswith("total") else ("_" + k): v for k, v in metrics.items()}
         return metrics

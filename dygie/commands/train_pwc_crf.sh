@@ -29,4 +29,4 @@ export TEST_PATH=$DATA_BASE_PATH/test.json:pwc
 
 export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_dygie_crf/$1}
 
-allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $CONFIG_FILE
+allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $RECOVER $CONFIG_FILE

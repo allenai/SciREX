@@ -1,7 +1,9 @@
 from typing import List, Tuple, Dict
-from scripts.analyse_pwc_entity_results import *
+from scripts.entity_utils import *
 import pandas as pd
 import numpy as np
+from itertools import product
+from tqdm import tqdm
 
 from dygie.training.pwc_relation_metrics import RelationMetrics
 

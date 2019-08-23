@@ -1,12 +1,12 @@
-default = {"BERT_FINE_TUNE": "none", "USE_LSTM": "true"}
+default = {"BERT_FINE_TUNE": "none", "USE_LSTM": "true", "BALANCING_STRATEGY" : "none"}
 
 experiments = [
-    # {"BERT_FINE_TUNE": "none", "USE_LSTM": "true"},
-    {"BERT_FINE_TUNE": "11", "USE_LSTM": "false"},
+    {"BERT_FINE_TUNE": "none", "USE_LSTM": "true"},
+    # {"BERT_FINE_TUNE": "11", "USE_LSTM": "false"},
     # {"BERT_FINE_TUNE": "all", "USE_LSTM": "false"},
     # {"BALANCING_STRATEGY": "class_weight"},
     # {"BALANCING_STRATEGY": "sample"},
-    {"BERT_FINE_TUNE": "11,10,9", "USE_LSTM": "false"},
+    # {"BERT_FINE_TUNE": "11,10,9", "USE_LSTM": "false"},
 ]
 
 import subprocess
@@ -22,7 +22,7 @@ def run_experiment(experiment, dry_run):
     print(env_vars)
 
     config_file = 'dygie/commands/train_pwc_crf.sh'
-    exp_name = 'crf--' + "--".join([k + '-' + v.replace(',', '.') for k, v in env_vars.items()])
+    exp_name = 'crf--relation--' + "--".join([k + '-' + v.replace(',', '.') for k, v in env_vars.items()])
 
     cmd = " ".join(
         [

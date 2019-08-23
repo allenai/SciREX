@@ -2,9 +2,6 @@ import logging
 from overrides import overrides
 import numpy as np
 import torch
-from torch import nn
-from sklearn.metrics import precision_recall_curve
-from allennlp.common.checks import ConfigurationError
 from allennlp.training.metrics.metric import Metric
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -42,10 +39,15 @@ class BinaryThresholdF1(Metric):
         # Get the data from the Variables to avoid GPU memory leak
         predictions, gold_labels = self.unwrap_to_tensors(predictions, gold_labels)
 
-        pred = predictions.numpy().ravel()
+        pred = predictions.numpy().ravel().astype(float)
         gold = gold_labels.numpy().ravel().astype(int)
 
-        self.total_counts += gold.sum()
+        assert np.all(pred <= 1.0), breakpoint()
+        assert np.all(gold <= 1.0), breakpoint()
+        assert np.all(pred >= 0.0), breakpoint()
+        assert np.all(gold >= 0.0), breakpoint()
+
+        self.total_counts += gold[:, None].sum(0)
         binned_predictions = (pred[:, None] > self.bins).astype(int)
 
         self.predicted_counts += binned_predictions.sum(0)
@@ -67,15 +69,23 @@ class BinaryThresholdF1(Metric):
         best_idx = np.argmin(np.abs(precision - recall))
         best_threshold = self.bins[best_idx]
 
+        metrics = {
+            "total_gold" : float(self.total_counts[best_idx]),
+            "total_predicted" : float(self.predicted_counts[best_idx]),
+            "total_matched" : float(self.matched_counts[best_idx])
+        }
+
         if reset :
             self.reset()
 
-        return {
-            "precision" : float(precision[best_idx]),
-            "recall" : float(recall[best_idx]),
-            "f1" : float(f1[best_idx]),
-            "threshold" : best_threshold
-        }
+        metrics.update({
+            "precision" : float(precision[best_idx])*100,
+            "recall" : float(recall[best_idx])*100,
+            "f1" : float(f1[best_idx])*100,
+            "threshold" : best_threshold,
+        })
+        
+        return metrics
 
     @overrides
     def reset(self):
