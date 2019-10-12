@@ -16,7 +16,7 @@ NER
 Coreference
 ===========
 
-1. [] Distance Features between Entities
+1. [x] Distance Features between Entities
 2. [] Contextualised Entities Representation
 3. [] Global Entity Features (Co-occurence of words in whole corpus)
 4. [] Within the end to end model

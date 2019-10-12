@@ -1,16 +1,18 @@
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, List
 import json
 import logging
-
+import numpy as np
 from overrides import overrides
 
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
-from allennlp.data.fields import Field, TextField, LabelField, MetadataField
+from allennlp.data.fields import Field, TextField, LabelField, MetadataField, ArrayField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
 from allennlp.data.tokenizers import Tokenizer, WordTokenizer, Token
 from itertools import combinations
+from baseline.baseline import character_similarity_features
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -58,7 +60,7 @@ class PwCLinkerAllPairsReader(DatasetReader):
                 ins = json.loads(line)
                 for field in ["prediction", "gold"]:
                     entities = [
-                        (x["span"][0], x["span"][1], x["label"].split("_")[1])
+                        (x["span"][0], x["span"][1], x["label"].split("_")[0])
                         for x in ins[field]
                     ]
                     words = ins["words"]
@@ -74,7 +76,11 @@ class PwCLinkerAllPairsReader(DatasetReader):
                                 "doc_id": ins["doc_id"],
                                 "field": field,
                             }
-                            pairs.append((w1, w2, t1, t2, gold_label, metadata))
+                            char_sim_features = character_similarity_features(w1, w2, max_ng=3)
+                            features = np.array(
+                                [(e1[1] - e2[0]) / len(ins["words"]), (e1[1] - e1[0]) / 10, (e2[1] - e2[0]) / 10] + char_sim_features
+                            )
+                            pairs.append((w1, w2, t1, t2, features, gold_label, metadata))
 
         return pairs
 
@@ -85,6 +91,7 @@ class PwCLinkerAllPairsReader(DatasetReader):
         hypothesis: str,
         type_premise: str,
         type_hypothesis: str,
+        features: List[float],
         label: str = None,
         metadata: Dict[str, Any] = None,
     ) -> Instance:
@@ -96,6 +103,43 @@ class PwCLinkerAllPairsReader(DatasetReader):
         fields["hypothesis"] = TextField(hypothesis_tokens, self._token_indexers)
         if label:
             fields["label"] = LabelField(label)
+
+        fields["pair_features"] = ArrayField(features)
+
+        metadata.update(
+            {
+                "premise_tokens": [x.text for x in premise_tokens],
+                "hypothesis_tokens": [x.text for x in hypothesis_tokens],
+                "keep_prob": 1.0,
+            }
+        )
+        fields["metadata"] = MetadataField(metadata)
+
+        return Instance(fields)
+
+class PwCLinkerAllPairsReaderBERT(PwCLinkerAllPairsReader):
+    @overrides
+    def text_to_instance(
+        self,  # type: ignore
+        premise: str,
+        hypothesis: str,
+        type_premise: str,
+        type_hypothesis: str,
+        features: List[float],
+        label: str = None,
+        metadata: Dict[str, Any] = None,
+    ) -> Instance:
+        fields: Dict[str, Field] = {}
+        premise_tokens = self._tokenizer.tokenize(type_premise + " " + premise)
+        hypothesis_tokens = self._tokenizer.tokenize(type_hypothesis + " " + hypothesis)
+
+        fields["tokens"] = TextField(
+            [Token("[CLS]")] + premise_tokens + [Token("[SEP]")] + hypothesis_tokens, self._token_indexers
+        )
+        if label:
+            fields["label"] = LabelField(label)
+
+        fields["pair_features"] = ArrayField(features)
 
         metadata.update(
             {

@@ -29,16 +29,19 @@ def extract_entites_from_document(row):
         row[enttype] = [x for y in row[enttype] for x in y]
     return row
 
-
-def load_pwc_sentence_predictions(pwc_sentence_file: str, pwc_prediction_file: str) -> pd.DataFrame:
-    pwc_sentences = [json.loads(line) for line in open(pwc_sentence_file)]
-
-    pwc_output = []
+def clean_predictions(pwc_prediction_file: str) -> None :
+    cleaned_prediction_file = open(pwc_prediction_file + '.clean', 'w')
     for line in tqdm(open(pwc_prediction_file)):
         line = json.loads(line)
         del line["logits"]
         del line["mask"]
-        pwc_output.append(line)
+        cleaned_prediction_file.write(json.dumps(line) + '\n')
+
+    cleaned_prediction_file.close()
+
+def load_pwc_sentence_predictions(pwc_sentence_file: str, pwc_prediction_file: str) -> pd.DataFrame:
+    pwc_sentences = [json.loads(line) for line in open(pwc_sentence_file)]
+    pwc_output = [json.loads(line) for line in open(pwc_prediction_file)]
 
     print(len(pwc_sentences), len(pwc_output))
 

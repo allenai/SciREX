@@ -7,37 +7,32 @@ logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s', level=loggin
 logging.info("Loading Allennlp Modules")
 
 from dygie.commands.predict_spans import predict as predict_spans
+from dygie.commands.predict_ner import predict as predict_ner
 from dygie.commands.predict_coref import predict as predict_coref
+from dygie.commands.predict_clusters import predict as predict_clusters
+from dygie.commands.predict_n_ary_relations import predict as predict_n_ary_relations
 
 logging.info("Loaded Allennlp Modules")
-
 
 def predict(span_archive_folder, coref_archive_folder, test_file, output_folder, cuda_device) :
     os.makedirs(output_folder, exist_ok=True)
     span_file = os.path.join(output_folder, 'spans.jsonl')
     coref_file = os.path.join(output_folder, 'coref.jsonl')
+    cluster_file = os.path.join(output_folder, 'clusters.jsonl')
+    n_ary_relations_file = os.path.join(output_folder, 'n_ary_relations.jsonl')
 
+    '''
     coref_threshold = json.load(open(coref_archive_folder + '/metrics.json'))['best_validation_threshold']
-    relation_threshold = json.load(open(span_archive_folder + '/metrics.json'))['best_validation_rel_threshold']
+    relation_threshold = json.load(open(span_archive_folder + '/metrics.json'))['best_validation__rel_threshold']
+    '''
 
     logging.info("Predicting ")
     
-    predict_spans(span_archive_folder, test_file, span_file, cuda_device)
-    predict_coref(coref_archive_folder, span_file, coref_file, cuda_device)
-
-    coref_output = [json.loads(line) for line in open(coref_file)]
-    ner_output = [json.loads(line) for line in open(span_file)]
-    ner_output = {x['doc_id']: x for x in ner_output}
-    for d in coref_output :
-        ner_output[d['doc_id']]['coref_prediction'] = d['coref_prediction']
-        ner_output[d['doc_id']]['coref_gold'] = d['coref_gold']
-
-    for k, d in ner_output.items() :
-        d['coref_threshold'] = coref_threshold
-        d['relation_threshold'] = relation_threshold
-
-    with open(os.path.join(output_folder, 'combined.jsonl'), 'w') as f :
-        f.write('\n'.join([json.dumps(d) for d in ner_output.values()]))
+    # predict_ner(span_archive_folder, test_file, span_file, cuda_device)
+    # predict_coref(coref_archive_folder, span_file, coref_file, cuda_device)
+    # predict_clusters(output_folder, cluster_file)
+    predict_n_ary_relations(span_archive_folder, cluster_file, n_ary_relations_file, cuda_device)
+    
 
 def main():
     span_archive_folder = argv[1]

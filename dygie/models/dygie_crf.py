@@ -3,14 +3,12 @@ import logging
 from typing import Dict, List, Optional
 
 import torch
-import torch.nn.functional as F
 from overrides import overrides
 
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.modules.span_extractors import EndpointSpanExtractor, SelfAttentiveSpanExtractor
-from dygie.models.span_extractor import MaxPoolSpanExtractor
 from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 
 # Import submodules.
@@ -18,39 +16,12 @@ from dygie.models.coref import CorefResolver
 from dygie.models.ner_crf_tagger import NERTagger
 from dygie.models.relation_pwc_crf import RelationExtractor
 from dygie.models.span_classifier_binary import SpanClassifier
-from dygie.models.span_classifier import SpanClassifier as MultiClassSpanClassifier
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 @Model.register("dygie_crf")
 class DyGIECRF(Model):
-    """
-    TODO(dwadden) document me.
-
-    Parameters
-    ----------
-    vocab : ``Vocabulary``
-    text_field_embedder : ``TextFieldEmbedder``
-        Used to embed the ``text`` ``TextField`` we get as input to the model.
-    context_layer : ``Seq2SeqEncoder``
-        This layer incorporates contextual information for each word in the document.
-    feature_size: ``int``
-        The embedding size for all the embedded features, such as distances or span widths.
-    submodule_params: ``TODO(dwadden)``
-        A nested dictionary specifying parameters to be passed on to initialize submodules.
-    max_span_width: ``int``
-        The maximum width of candidate spans.
-    lexical_dropout: ``int``
-        The probability of dropping out dimensions of the embedded text.
-    initializer : ``InitializerApplicator``, optional (default=``InitializerApplicator()``)
-        Used to initialize the model parameters.
-    regularizer : ``RegularizerApplicator``, optional (default=``None``)
-        If provided, will be used to calculate the reglarization penalty during training.
-    display_metrics: ``List[str]``. A list of the metrcs that should be printed out during model
-        training.
-    """
-
     def __init__(
         self,
         vocab: Vocabulary,
@@ -154,7 +125,6 @@ class DyGIECRF(Model):
         output_ner = {"loss": 0}
         output_relation = {"loss": 0, "metadata" : metadata}
         output_linker = {"loss": 0}
-        output_entity = {"loss": 0}
 
         ner_labels_dispatcher = {
             "ner_labels": ner_labels,
@@ -174,52 +144,52 @@ class DyGIECRF(Model):
             spans = output_ner["spans"].to(text_embeddings.device).long()
             span_entity_labels = output_ner['span_labels'].to(text_embeddings.device).long()
 
-        if spans.nelement() != 0:
-            attended_span_embeddings = self._attentive_span_extractor(contextualized_embeddings, spans)
-            span_mask = (spans[:, :, 0] >= 0).float()
-            spans = F.relu(spans.float()).long()
-            endpoint_span_embeddings = self._endpoint_span_extractor(contextualized_embeddings, spans)
-            span_embeddings = torch.cat([endpoint_span_embeddings, attended_span_embeddings], -1)
+        # if spans.nelement() != 0:
+        #     attended_span_embeddings = self._attentive_span_extractor(contextualized_embeddings, spans)
+        #     span_mask = (spans[:, :, 0] >= 0).float()
+        #     spans = F.relu(spans.float()).long()
+        #     endpoint_span_embeddings = self._endpoint_span_extractor(contextualized_embeddings, spans)
+        #     span_embeddings = torch.cat([endpoint_span_embeddings, attended_span_embeddings], -1)
 
-            if span_mask.sum() != 0 :
-                # Add Features to Span Embeddings                
-                start_pos_in_doc = torch.LongTensor([x["start_pos_in_doc"] for x in metadata]).to(spans.device)
-                sentence_offset = start_pos_in_doc.unsqueeze(1).unsqueeze(2)
-                span_offset = spans + (sentence_offset * span_mask.unsqueeze(-1).long())
+        #     if span_mask.sum() != 0 :
+        #         # Add Features to Span Embeddings                
+        #         start_pos_in_doc = torch.LongTensor([x["start_pos_in_doc"] for x in metadata]).to(spans.device)
+        #         sentence_offset = start_pos_in_doc.unsqueeze(1).unsqueeze(2)
+        #         span_offset = spans + (sentence_offset * span_mask.unsqueeze(-1).long())
 
-                doc_length = metadata[0]["document_metadata"]["doc_length"]
-                span_position = span_offset.float().mean(-1, keepdim=True) / doc_length
+        #         doc_length = metadata[0]["document_metadata"]["doc_length"]
+        #         span_position = span_offset.float().mean(-1, keepdim=True) / doc_length
 
-                n_entity_labels = self.vocab.get_vocab_size("span_entity_labels")
-                span_entity_labels_one_hot = torch.zeros(
-                    (span_entity_labels.size(0), span_entity_labels.size(1), n_entity_labels)
-                ).to(spans.device)
-                span_entity_labels_one_hot.scatter_(-1, span_entity_labels.unsqueeze(-1), 1)
+        #         n_entity_labels = self.vocab.get_vocab_size("span_entity_labels")
+        #         span_entity_labels_one_hot = torch.zeros(
+        #             (span_entity_labels.size(0), span_entity_labels.size(1), n_entity_labels)
+        #         ).to(spans.device)
+        #         span_entity_labels_one_hot.scatter_(-1, span_entity_labels.unsqueeze(-1), 1)
 
-                link_embeddings = torch.cat([span_embeddings, span_position, span_entity_labels_one_hot], dim=-1)
+        #         link_embeddings = torch.cat([span_embeddings, span_position, span_entity_labels_one_hot], dim=-1)
 
-                # Linking 
-                output_linker = self._link_classifier(
-                    spans, span_mask, link_embeddings, span_link_labels, metadata=metadata
-                )
+        #         # Linking 
+        #         output_linker = self._link_classifier(
+        #             spans, span_mask, link_embeddings, span_link_labels, metadata=metadata
+        #         )
                 
-                # Relation Extraction
-                output_relation = self._relation.compute_representations(
-                    spans, span_mask, link_embeddings, span_coref_labels, relation_index, metadata
-                )
-                output_relation = self._relation.predict_labels(output_relation)
+        #         # Relation Extraction
+        #         output_relation = self._relation.compute_representations(
+        #             spans, span_mask, link_embeddings, span_coref_labels, relation_index, metadata
+        #         )
 
-        if "loss" not in output_relation:
-            output_relation["loss"] = 0
+        #         output_relation = self._relation.predict_labels(output_relation)
+
+        # if "loss" not in output_relation:
+        #     output_relation["loss"] = 0
 
         loss = (
             output_ner["loss"]
             + output_relation["loss"]
             + output_linker["loss"]
-            + output_entity["loss"]
         )
 
-        output_dict = dict(relation=output_relation, ner=output_ner, linked=output_linker, entity=output_entity)
+        output_dict = dict(relation=output_relation, ner=output_ner, linked=output_linker)
         output_dict["loss"] = loss
 
         return output_dict

@@ -3,7 +3,7 @@
 import json
 import os
 from sys import argv
-from typing import Dict, List, Tuple
+from typing import List
 
 from tqdm import tqdm
 
@@ -13,7 +13,7 @@ from allennlp.data.dataset import Batch
 from allennlp.models.archival import load_archive
 from allennlp.nn import util as nn_util
 from dygie.data.dataset_readers.entity_linking_reader_all_pairs import \
-    PwCLinkerAllPairsReader
+    PwCLinkerAllPairsReaderBERT
 
 def predict(archive_folder, test_file, output_file, cuda_device):
     import_submodules("dygie")
@@ -23,7 +23,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
     model.eval()
     config = archive.config.duplicate()
     dataset_reader_params = config["dataset_reader"]
-    dataset_reader = PwCLinkerAllPairsReader.from_params(params=dataset_reader_params)
+    dataset_reader = PwCLinkerAllPairsReaderBERT.from_params(params=dataset_reader_params)
     instances = dataset_reader.read(test_file)
 
     batch = Batch(instances)
@@ -52,7 +52,13 @@ def predict(archive_folder, test_file, output_file, cuda_device):
 
                 documents[doc_id]['coref_' + field].append(((span_p[0], span_p[1]), (span_h[0], span_h[1]), round(p, 3)))
 
-        f.write("\n".join([json.dumps(x) for x in documents.values()]))
+        span_documents = [json.loads(line) for line in open(test_file)]
+        span_documents = {x['doc_id']:x for x in span_documents}
+
+        for k in documents :
+            span_documents[k].update(documents[k])
+
+        f.write("\n".join([json.dumps(x) for x in span_documents.values()]))
 
 
 def main():

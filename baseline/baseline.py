@@ -22,7 +22,7 @@ def character_cosine_similarity(w1, w2, vectorizer) :
     v = vectorizer.transform([w1, w2])
     return cosine_similarity(v[0], v[1], dense_output=True)[0, 0]
 
-def character_similarity_features(span_1: Union[str, MentionTuple], span_2: Union[str, MentionTuple], max_ng: int = 3) -> Dict[str, float]:
+def character_similarity_features(span_1: Union[str, MentionTuple], span_2: Union[str, MentionTuple], max_ng: int = 3, as_array: bool = True) -> Dict[str, float]:
     if type(span_1) != str :
         w1, w2 = span_1.text, span_2.text
     else :
@@ -36,6 +36,8 @@ def character_similarity_features(span_1: Union[str, MentionTuple], span_2: Unio
 
     ng = min(min(max([len(x) for x in char1]), max([len(x) for x in char2])), max_ng)
     features = {}
+
+    features['search'] = match_abbr(" ".join(char1), " ".join(char2))
     for n in range(1, ng + 1):
         cgrams_1, cgrams_abbr_1 = get_n_grams_with_abbr(char1, n, return_sep=True)
         cgrams_2, cgrams_abbr_2 = get_n_grams_with_abbr(char2, n, return_sep=True)
@@ -51,7 +53,10 @@ def character_similarity_features(span_1: Union[str, MentionTuple], span_2: Unio
     features["fuzzy_word_word_sim"] = fuzzy_match_with_any(w1, w2)
     array_features[0] = features["fuzzy_word_word_sim"]
     
-    return array_features
+    if as_array :
+        return array_features
+    else :
+        return features
 
 
 def words_between_spans(span_1: MentionTuple, span_2: MentionTuple):
@@ -70,7 +75,7 @@ def get_all_span_pair_features(span_1: MentionTuple, span_2: MentionTuple):
     features = {}
     features.update(words_between_spans(span_1, span_2))
     features.update(mention_between_spans(span_1, span_2))
-    features.update(character_similarity_features(span_1, span_2))
+    features.update(character_similarity_features(span_1, span_2, as_array=False))
     return features
 
 

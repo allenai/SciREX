@@ -1,5 +1,6 @@
 import sys
-sys.path.insert(0, '')
+
+sys.path.insert(0, "")
 from scripts.entity_utils import *
 from itertools import combinations
 import numpy as np
@@ -10,13 +11,13 @@ is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
 
 def process_rows_for_doc(rows):
     doc_id = rows.name
-    try :
+    try:
         rows = rows.sort_values(by=["para_num", "sentence_num"])
-    except :
+    except:
         breakpoint()
     n_paragraphs = rows["para_num"].max() + 1
 
-    n_sections = rows['section_id'].max() + 1
+    n_sections = rows["section_id"].max() + 1
     sections = [0 for _ in range(n_sections)]
     paragraphs = [0 for _ in range(n_paragraphs)]
 
@@ -39,11 +40,10 @@ def process_rows_for_doc(rows):
         words += row["words"]
         ner += entities
         paragraphs[row["para_num"]] += len(row["words"])
-        sections[row['section_id']] += len(row['words'])
+        sections[row["section_id"]] += len(row["words"])
 
-        if row['para_id'] == 0 and row['sentence_id'] == 0 :
-            section_heads[row['section_id']] = row['words']
-
+        if row["para_id"] == 0 and row["sentence_id"] == 0:
+            section_heads[row["section_id"]] = row["words"]
 
         for e in entities:
             for k in e[-1].links:
@@ -78,8 +78,8 @@ def process_rows_for_doc(rows):
 
     return {
         "paragraphs": paragraphs,
-        "sections" : sections,
-        "section_heads" : section_heads,
+        "sections": sections,
+        "section_heads": section_heads,
         "words": words,
         "ner": ner,
         "coref": coreference,
@@ -116,6 +116,21 @@ def dump_to_file(data, output_dir, max_id, test_size=0.3, random_state=1001):
         split_data[split].to_json(os.path.join(output_dir, split + ".jsonl"), orient="records", lines=True)
 
 
+def dump_all_to_file(data):
+    data.sort_index(inplace=True)
+    #     os.makedirs(output_dir, exist_ok=True)
+    for i in range(0, len(data.index), 20):
+        data.loc[data.index[i : i + 20]].to_json(
+            os.path.join("../model_data", "pwc_split_on_sectioned", str(i) + "_unannotated.jsonl"),
+            orient="records",
+            lines=True,
+        )
+        json.dump(
+            {"pwc": os.path.join("model_data", "pwc_split_on_sectioned", str(i) + "_unannotated.jsonl")},
+            open(f"../model_data/dataset_readers_paths/{i}_unannotated.json", "w"),
+        )
+
+
 ########################
 
 
@@ -131,9 +146,7 @@ def make_sciERC_into_pwc_format(instance):
         "Cluster_" + str(i): [[e[0], e[1] + 1] for e in c if tuple(e) in entities_used]
         for i, c in enumerate(instance["clusters"])
     }
-    pwc_instance["coref"] = {
-        k:v for k, v in pwc_instance['coref'].items() if len(v) > 0
-    }
+    pwc_instance["coref"] = {k: v for k, v in pwc_instance["coref"].items() if len(v) > 0}
     pwc_instance["relations"] = []
     pwc_instance["n_ary_relations"] = []
     pwc_instance["doc_id"] = instance["doc_key"]
@@ -150,5 +163,7 @@ def dump_sciERC_to_file(scierc_input_dir, output_dir):
         f.write("\n".join([json.dumps(ins) for ins in data]))
         f.close()
 
-if __name__ == '__main__' :
-    dump_sciERC_to_file('../data/sciERC_processed_data/json', '../data/sciERC_processed_data/json_pwc_format/')
+
+if __name__ == "__main__":
+    dump_sciERC_to_file("../data/sciERC_processed_data/json", "../data/sciERC_processed_data/json_pwc_format/")
+

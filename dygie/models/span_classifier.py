@@ -81,7 +81,7 @@ class SpanClassifier(Model):
         return output_dict
 
     def _compute_loss_for_scores(self, ner_scores, ner_labels, span_mask, metadata):
-        mask_flat = span_mask.view(-1).byte()
+        mask_flat = span_mask.view(-1).bool()
 
         ner_scores_flat = ner_scores.view(-1, ner_scores.size(-1))[mask_flat]
         ner_labels_flat = ner_labels.view(-1)[mask_flat]

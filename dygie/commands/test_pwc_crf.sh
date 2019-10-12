@@ -11,6 +11,13 @@ export CONFIG_FILE=dygie/training_config/pwc_config_crf.jsonnet
 
 export CUDA_DEVICE=$CUDA_DEVICE
 
+SEED=10034
+PYTORCH_SEED=`expr $SEED / 10`
+NUMPY_SEED=`expr $PYTORCH_SEED / 10`
+export SEED=$SEED
+export PYTORCH_SEED=$PYTORCH_SEED
+export NUMPY_SEED=$NUMPY_SEED
+
 export IS_LOWERCASE=true
 
 export DATA_BASE_PATH=model_data/dataset_readers_paths
@@ -22,4 +29,5 @@ export TEST_PATH=$DATA_BASE_PATH/test.json:pwc
 
 export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_dygie_crf/$1}
 
-allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $RECOVER $CONFIG_FILE
+python -m allennlp.run evaluate --output-file $OUTPUT_BASE_PATH/metrics_test.json --include-package dygie \
+$OUTPUT_BASE_PATH/model.tar.gz $TEST_PATH

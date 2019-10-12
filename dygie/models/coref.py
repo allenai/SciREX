@@ -51,7 +51,6 @@ class CorefResolver(Model):
         self,
         vocab: Vocabulary,
         antecedent_feedforward: FeedForward,
-        feature_size: int,
         spans_per_word: float,
         max_antecedents: int,
         initializer: InitializerApplicator = InitializerApplicator(),
@@ -64,10 +63,6 @@ class CorefResolver(Model):
         self._antecedent_scorer = TimeDistributed(torch.nn.Linear(antecedent_feedforward.get_output_dim(), 1))
 
         self._score_mixer = torch.nn.Linear(4, 1, bias=False)
-
-        # 10 possible distance buckets.
-        self._num_distance_buckets = 10
-        self._distance_embedding = Embedding(self._num_distance_buckets, feature_size)
 
         self._spans_per_word = spans_per_word
         self._max_antecedents = max_antecedents

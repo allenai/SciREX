@@ -14,6 +14,8 @@ LabelSpan = namedtuple("Span", ["start", "end", "token_start", "token_end", "ent
 from scripts.analyse_pwc_entity_results import *
 from scripts.entity_utils import *
 
+# from bratreader.repomodel import RepoModel
+
 def process_folder(folder: str):
     span_labels = {}
     map_T_to_span = {}

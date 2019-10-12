@@ -10,13 +10,12 @@ from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.modules.span_extractors import EndpointSpanExtractor, SelfAttentiveSpanExtractor
-from dygie.models.span_extractor import MaxPoolSpanExtractor
 from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 
 # Import submodules.
 from dygie.models.coref import CorefResolver
-from dygie.models.ner_slim import NERTagger
-# from dygie.models.relation_pwc import RelationExtractor
+from dygie.models.ner_crf_tagger import NERTagger
+from dygie.models.relation_pwc_crf import RelationExtractor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

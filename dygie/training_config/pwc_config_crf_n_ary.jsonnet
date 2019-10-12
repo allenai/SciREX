@@ -1,6 +1,6 @@
 // Import template file.
 
-local template = import "template_crf.libsonnet";
+local template = import "template_crf_n_ary.libsonnet";
 
 ////////////////////
 
@@ -21,7 +21,6 @@ local params = {
   // Specifies the token-level features that will be created.
   use_glove: false,
   use_char: true,
-  use_attentive_span_extractor: true,
   use_bert: true,
   use_lstm: stringToBool(std.extVar("USE_LSTM")),
   bert_fine_tune: std.extVar("BERT_FINE_TUNE"),
@@ -30,7 +29,6 @@ local params = {
   // Specifies the model parameters.
   lstm_hidden_size: 200,
   lstm_n_layers: 1,
-  feature_size: 20,
   feedforward_layers: 2,
   feedforward_dim: 150,
   feedforward_dropout: 0.4,
@@ -48,23 +46,21 @@ local params = {
   coref_max_antecedents: 100,
 
   // Relation settings.
-  relation_spans_per_word: 0.5,
   relation_positive_label_weight: 1.0,
 
   // Model training
-  batch_size: 20,
+  batch_size: 60,
   num_epochs: 100,
   shuffle_instances: false,
-  patience: 10,
   optimizer: {
     type: "adam",
-    lr: 0.001
+    lr: 1e-3
   },
   learning_rate_scheduler:  {
     type: "reduce_on_plateau",
     factor: 0.5,
     mode: "max",
-    patience: 5
+    patience: 10
   }
 };
 

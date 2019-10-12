@@ -46,7 +46,6 @@ class SpanClassifier(Model):
     def forward(
         self,  # type: ignore
         spans: torch.IntTensor,  # (Batch Size, Number of Spans, 2)
-        span_mask: torch.IntTensor,  # (Batch Size, Number of Spans)
         span_embeddings: torch.IntTensor,  # (Batch Size, Number of Spans, Span Embedding SIze)
         ner_labels: torch.IntTensor = None,
         metadata: List[Dict[str, Any]] = None,
@@ -59,15 +58,15 @@ class SpanClassifier(Model):
 
         output_dict = {
             "spans" : spans,
-            "span_mask" : span_mask,
             "ner_probs": ner_probs,
             "loss" : 0.0
         }
 
         if ner_labels is not None:
-            assert ner_probs.shape == ner_labels.shape and len(ner_probs.shape) == 2
+            assert ner_probs.shape == ner_labels.shape, breakpoint()
+            assert len(ner_probs.shape) == 2, breakpoint()
             self._ner_metrics(ner_probs, ner_labels)
-            loss = self._compute_loss_for_scores(ner_probs, ner_labels, span_mask, metadata)
+            loss = self._compute_loss_for_scores(ner_probs, ner_labels, metadata)
             output_dict["loss"] = loss
 
         if metadata is not None:
@@ -75,11 +74,9 @@ class SpanClassifier(Model):
 
         return output_dict
 
-    def _compute_loss_for_scores(self, ner_probs, ner_labels, span_mask, metadata):
-        mask_flat = span_mask.view(-1).byte()
-
-        ner_probs_flat = ner_probs.view(-1)[mask_flat]
-        ner_labels_flat = ner_labels.view(-1)[mask_flat]
+    def _compute_loss_for_scores(self, ner_probs, ner_labels, metadata):
+        ner_probs_flat = ner_probs.view(-1)
+        ner_labels_flat = ner_labels.view(-1)
 
         # if not self._registered_loss_modifiers:
         #     sample_prob = metadata[0]["ner_labels_sample_prob"]
@@ -107,11 +104,8 @@ class SpanClassifier(Model):
     def decode(self, output_dict: Dict[str, torch.Tensor]):
         output_dict['decoded_spans'] = []
         if 'spans' in output_dict :
-            for spans, spans_mask, spans_prob in zip(output_dict['spans'], output_dict['span_mask'], output_dict['ner_probs']) :
-                spans_mask = spans_mask.byte()
-                labels = spans_prob[spans_mask]
-                spans = spans[spans_mask]
-                decoded = {(span[0].item(), span[1].item() + 1): label.item() for span, label in zip(spans, labels)}
+            for spans, spans_prob in zip(output_dict['spans'], output_dict['ner_probs']) :
+                decoded = {(span[0].item(), span[1].item() + 1): label.item() for span, label in zip(spans, spans_prob)}
                 output_dict['decoded_spans'].append(decoded)
 
         return output_dict

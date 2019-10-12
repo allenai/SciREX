@@ -3,7 +3,7 @@ import glob
 import csv
 
    
-tables_dirname = '/home/beltagy/pwc_tables/data/arxiv/papers/'
+tables_dirname = '/home/sarthakj/data/arxiv/papers/'
 
 class Result(NamedTuple):
     score: float

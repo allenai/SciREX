@@ -51,6 +51,8 @@ class PwCLinkerReader(DatasetReader):
         file_path = cached_path(file_path)
         pairs = self.generate_pairs(file_path)
 
+        logger.info("NUMBER OF PAIRS - %d", len(pairs))
+
         c = Counter([x[2] for x in pairs])
         min_count = min(c.values())
         prob = {k: min(1, min_count / v) for k, v in c.items()}
@@ -76,8 +78,10 @@ class PwCLinkerReader(DatasetReader):
                             coref[tuple(v)] = []
                         coref[tuple(v)].append(k)
                 coref = {k: set(v) for k, v in coref.items()}
-                shuffle(entities)
+                # shuffle(entities)
                 for e1, e2 in combinations(entities, 2):
+                    if e1 == e2: 
+                        continue
                     c1, c2 = coref.get((e1[0], e1[1]), set()), coref.get((e2[0], e2[1]), set())
                     t1, t2 = e1[2][0], e2[2][0]
 

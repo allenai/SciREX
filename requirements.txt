@@ -1,5 +1,5 @@
 git+https://github.com/successar/allennlp@master#egg=allennlp
-torch==1.1.0
+torch>=1.2.0
 overrides==1.9
 numpy==1.16.4
 pandas==0.24.2
@@ -14,3 +14,5 @@ spacy==2.1.6
 p_tqdm==1.2
 beautifulsoup4==4.8.0
 elasticsearch==7.0.2
+ipdb
+python-intervals

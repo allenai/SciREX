@@ -25,8 +25,6 @@ class RelationExtractor(Model):
         self,
         vocab: Vocabulary,
         antecedent_feedforward: FeedForward,
-        feature_size: int,
-        spans_per_word: float,
         relation_coverage: int = 0,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None,
@@ -35,10 +33,6 @@ class RelationExtractor(Model):
 
         self._antecedent_feedforward = TimeDistributed(antecedent_feedforward)
         self._antecedent_scorer = TimeDistributed(torch.nn.Linear(antecedent_feedforward.get_output_dim(), 1))
-
-        # 10 possible distance buckets.
-        self._num_distance_buckets = 10
-        self._distance_embedding = Embedding(self._num_distance_buckets, feature_size)
 
         self._coref_scores = BinaryThresholdF1()
 
@@ -98,6 +92,8 @@ class RelationExtractor(Model):
             "spans_para_idx": spans_para_idx,
             "batch_size" : span_embeddings_batched.shape[0]
         }
+
+        output_dict = self.predict_labels(output_dict)
 
         return output_dict
 
@@ -171,10 +167,7 @@ class RelationExtractor(Model):
         num_candidates = top_span_embeddings.size(1)
 
         embeddings_1_expanded = top_span_embeddings.unsqueeze(2)
-        try :
-            embeddings_1_tiled = embeddings_1_expanded.repeat(1, 1, num_candidates, 1)
-        except :
-            breakpoint()
+        embeddings_1_tiled = embeddings_1_expanded.repeat(1, 1, num_candidates, 1)
 
         embeddings_2_expanded = top_span_embeddings.unsqueeze(1)
         embeddings_2_tiled = embeddings_2_expanded.repeat(1, num_candidates, 1, 1)
@@ -184,14 +177,7 @@ class RelationExtractor(Model):
         pair_embeddings_list = [embeddings_1_tiled, embeddings_2_tiled, similarity_embeddings]
         pair_embeddings = torch.cat(pair_embeddings_list, dim=3)
 
-        spans_starts = spans[:, :, 0]  # (1, NS)
-        spans_ends = spans[:, :, 1]  # (1, NS)
-        distances = torch.abs(spans_starts.unsqueeze(-1) - spans_ends.unsqueeze(1))
-        distance_embeddings = self._distance_embedding(
-            util.bucket_values(distances, num_identity_buckets=0, num_total_buckets=self._num_distance_buckets)
-        )
-
-        return torch.cat([pair_embeddings, distance_embeddings], dim=3)
+        return pair_embeddings
 
     @staticmethod
     def _compute_antecedent_gold_labels(relation_labels: torch.IntTensor, coref_labels: torch.IntTensor):
@@ -204,8 +190,8 @@ class RelationExtractor(Model):
         target_labels = coref_labels.unsqueeze(2)
         coref_indicator = (target_labels * source_labels).sum(-1).clamp(0, 1).float()
 
-        label = relation_indicator - coref_indicator
-        assert (label < 0).sum() == 0
+        label = relation_indicator * (relation_indicator - coref_indicator)
+        assert (label < 0).sum() == 0, breakpoint()
 
         return label
 

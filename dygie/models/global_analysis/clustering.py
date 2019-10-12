@@ -3,16 +3,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scripts.entity_utils import *
 
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, DBSCAN
 from sklearn.metrics import silhouette_score
 
 from dygie.models.global_analysis import *
 
-from tqdm import tqdm
 def cluster_with_clustering(matrix, threshold, plot=True) :
     scores = []
     matrix = (matrix + matrix.T) + np.eye(*matrix.shape)
-    for n in tqdm(range(2, matrix.shape[0])) :
+    for n in range(2, matrix.shape[0]) :
         clustering = AgglomerativeClustering(n_clusters=n, linkage='complete', affinity='precomputed').fit(1 - matrix)
         scores.append(silhouette_score(1 - matrix, clustering.labels_, metric='precomputed'))
     if plot :
@@ -21,6 +20,30 @@ def cluster_with_clustering(matrix, threshold, plot=True) :
     best_n = scores.index(best_score) + 2
     clustering = AgglomerativeClustering(n_clusters=best_n, linkage='complete', affinity='precomputed').fit(1 - matrix)
     return clustering.n_clusters_, clustering.labels_
+
+def cluster_with_dbscan_clustering(matrix, threshold, plot=True) :
+    scores = []
+    matrix = (matrix + matrix.T) + np.eye(*matrix.shape)
+    eps_space = list(np.linspace(0.0001, 1, 100))
+    for eps in eps_space :
+        clustering = DBSCAN(eps=eps, metric='precomputed').fit(1 - matrix)
+        try :
+            scores.append(silhouette_score(1 - matrix, clustering.labels_, metric='precomputed'))
+        except :
+            scores.append(0.0)
+    if plot :
+        plt.plot(eps_space, scores)
+    best_score = max(scores)
+    best_eps = eps_space[scores.index(best_score)]
+    clustering = DBSCAN(eps=best_eps, metric='precomputed').fit(1 - matrix)
+    labels = clustering.labels_
+    max_label = max(clustering.labels_) + 1
+    for i in range(len(labels)) :
+        if labels[i] == -1 :
+            labels[i] = max_label
+            max_label += 1
+
+    return max(labels) + 1, labels
 
 from scipy.sparse.csgraph import connected_components
 def cluster_with_connected_components(matrix, threshold) :
@@ -52,7 +75,7 @@ def do_clustering(document, span_field, coref_field, plot=True) :
         c['name'] = strings[lengths.index(max(lengths))]
         c['type'] = list(c['types'])[0].split('_')[1]
 
-    return clusters, span_to_cluster_label, cluster_labels, get_linked_clusters(clusters)
+    return clusters, span_to_cluster_label, cluster_labels
 
 def get_linked_clusters(clusters) :
     linked_clusters = []
@@ -62,27 +85,27 @@ def get_linked_clusters(clusters) :
             linked_clusters.append(i)
     return linked_clusters
 
-from allennlp.training.metrics.conll_coref_scores import ConllCorefScores
-def evaluate_clustering_for_single_document(document, scorer) :
-    clusters, spl, cluster_labels, linked_clusters = do_clustering(document, 'prediction', 'coref_prediction', plot=False)
-    true_clusters = [c for c in document['true_coref'].values() if len(c) > 0]
-    gold_clusters, mention_to_gold = scorer.get_gold_clusters(true_clusters)
-    predicted_clusters, mention_to_predicted = scorer.get_gold_clusters([x['spans'] for i, x in enumerate(clusters) if i in linked_clusters])
-    for s in scorer.scorers :
-        s.update(predicted_clusters, gold_clusters, mention_to_predicted, mention_to_gold)
+# from allennlp.training.metrics.conll_coref_scores import ConllCorefScores
+# def evaluate_clustering_for_single_document(document, scorer) :
+#     clusters, spl, cluster_labels, linked_clusters = do_clustering(document, 'prediction', 'coref_prediction', plot=False)
+#     true_clusters = [c for c in document['true_coref'].values() if len(c) > 0]
+#     gold_clusters, mention_to_gold = scorer.get_gold_clusters(true_clusters)
+#     predicted_clusters, mention_to_predicted = scorer.get_gold_clusters([x['spans'] for i, x in enumerate(clusters) if i in linked_clusters])
+#     for s in scorer.scorers :
+#         s.update(predicted_clusters, gold_clusters, mention_to_predicted, mention_to_gold)
 
-def evaluate_for_all_document(documents) :
-    scorer = ConllCorefScores()
-    for d in documents :
-        evaluate_clustering_for_single_document(d, scorer)
+# def evaluate_for_all_document(documents) :
+#     scorer = ConllCorefScores()
+#     for d in documents :
+#         evaluate_clustering_for_single_document(d, scorer)
 
-    return scorer.get_metric(reset=True)
+#     return scorer.get_metric(reset=True)
 
 from dygie.training.evaluation import match_clusters
 def match_cluster_to_true(cluster, entities, threshold):
     if len(cluster['words']) == 0 :
         return None
-    scores = match_clusters(cluster['words'], entities).max(0)
+    scores = match_clusters(list(cluster['words']), entities).max(0)
     best_score, best_entity = scores.max(), scores.argmax()
 
     if best_score >= threshold :
@@ -98,4 +121,7 @@ def map_all_clusters_to_true(document, cluster_matching_thresholds) :
 
     for c in pred_e :
         c['matched'] = match_cluster_to_true(c, true_e, cluster_matching_thresholds[c['type']])
-    
+
+def map_gold_clusters_to_true(document, cluster_matching_thresholds) :
+    for k, c in document['gold_clusters'].items() :
+        c['matched'] = match_cluster_to_true(c, [k.replace('_', ' ')], cluster_matching_thresholds[document['gold_to_type'][k]])

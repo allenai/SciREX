@@ -3,6 +3,11 @@ from fuzzywuzzy import fuzz
 
 import re
 
+def match_abbr(a, b) :
+    if len(a.split()) > len(b.split()) :
+        a, b = b, a
+    it = iter(b)
+    return all(c in it for c in a) * len(a)/len(b.split(' '))
 
 def jaccard_similarity(list1, list2):
     s1 = set(list1)
@@ -46,7 +51,8 @@ def char_sim(w1: str, w2: str, ng: int = 3, with_abbr: bool = False) -> float:
     )
     if len(char1) == 0 and len(char2) == 0:
         print(char1, char2, clean_text(w1), clean_text(w2), ng)
-    return jaccard_similarity(char1, char2)
+    
+    return max(jaccard_similarity(char1, char2), match_abbr(" ".join(clean_text(w1)), " ".join(clean_text(w2))))
 
 
 def fuzzy_match_with_any(w1: str, w2: str) -> float:
@@ -64,8 +70,10 @@ entity_similarity_metric = {
 def match_entity_with_best_truth(enttype, entity, true_list):
     sim_metric, thresh = entity_similarity_metric[enttype]
     scores = [sim_metric(entity, x) for x in true_list]
-    matches = [true_list[i] for i, x in enumerate(scores) if x > thresh]
-    return matches
+    matches = sorted([(true_list[i], x) for i, x in enumerate(scores) if x > thresh], key=lambda x : -x[1])
+    if len(matches) > 0:
+        assert matches[0][1] == max(scores), "Best score not first entry"
+    return [x[0] for x in matches]
 
 
 ##########################################################################################################
