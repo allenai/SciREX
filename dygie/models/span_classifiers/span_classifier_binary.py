@@ -24,6 +24,7 @@ class SpanClassifier(Model):
         mention_feedforward: FeedForward,
         label_namespace: str,
         balancing_strategy: str = None,
+        n_features: int = 0,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None,
     ) -> None:
@@ -35,7 +36,7 @@ class SpanClassifier(Model):
         self._registered_loss_modifiers = False
 
         self._mention_feedforward = TimeDistributed(mention_feedforward)
-        self._ner_scorer = TimeDistributed(torch.nn.Linear(mention_feedforward.get_output_dim(), 1))
+        self._ner_scorer = TimeDistributed(torch.nn.Linear(mention_feedforward.get_output_dim() + n_features, 1))
         self._ner_metrics = BinaryThresholdF1()
 
         self._balancing_strategy = balancing_strategy
@@ -47,12 +48,16 @@ class SpanClassifier(Model):
         self,  # type: ignore
         spans: torch.IntTensor,  # (Batch Size, Number of Spans, 2)
         span_embeddings: torch.IntTensor,  # (Batch Size, Number of Spans, Span Embedding SIze)
-        ner_labels: torch.IntTensor = None,
+        span_features: torch.FloatTensor = None,
+        span_labels: torch.IntTensor = None,
         metadata: List[Dict[str, Any]] = None,
     ) -> Dict[str, torch.Tensor]:
 
         # Shape: (Batch_size, Number of spans, H)
         span_feedforward = self._mention_feedforward(span_embeddings)
+        if span_features is not None :
+            span_feedforward = torch.cat([span_feedforward, span_features], dim=-1)
+
         ner_scores = self._ner_scorer(span_feedforward).squeeze(-1) #(B, NS)
         ner_probs = torch.sigmoid(ner_scores)
 
@@ -62,11 +67,11 @@ class SpanClassifier(Model):
             "loss" : 0.0
         }
 
-        if ner_labels is not None:
-            assert ner_probs.shape == ner_labels.shape, breakpoint()
+        if span_labels is not None:
+            assert ner_probs.shape == span_labels.shape, breakpoint()
             assert len(ner_probs.shape) == 2, breakpoint()
-            self._ner_metrics(ner_probs, ner_labels)
-            loss = self._compute_loss_for_scores(ner_probs, ner_labels, metadata)
+            self._ner_metrics(ner_probs, span_labels)
+            loss = self._compute_loss_for_scores(ner_probs, span_labels, metadata)
             output_dict["loss"] = loss
 
         if metadata is not None:

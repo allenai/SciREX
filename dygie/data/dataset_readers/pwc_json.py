@@ -1,6 +1,5 @@
 import json
 import logging
-from collections import Counter
 from itertools import combinations
 from typing import Any, Dict, List, Tuple
 
@@ -8,7 +7,6 @@ from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.dataset_readers.dataset_utils import enumerate_spans
 from allennlp.data.fields import (
-    ArrayField,
     ListField,
     MetadataField,
     MultiLabelField,
@@ -21,7 +19,6 @@ from allennlp.data.token_indexers import TokenIndexer
 from allennlp.data.tokenizers import Token
 from overrides import overrides
 
-import intervals as I
 from dygie.data.dataset_readers.paragraph_utils import *
 from dygie.data.dataset_readers.read_pwc_dataset import Relation, is_x_in_y, used_entities
 from dygie.data.dataset_readers.span_utils import *
@@ -62,14 +59,13 @@ class PwCJsonReader(DatasetReader):
                     js = json.loads(line)
                     doc_key = js["doc_id"]
 
-                    # js = generate_only_span_text(js)
-
                     paragraphs: List[(int, int)] = js["sections"]
                     words: List[str] = js["words"]
                     entities: List[(int, int, str)] = js["ner"]
                     corefs_all: Dict[str, List[(int, int)]] = js["coref"]
                     n_ary_relations_all: List[Relation] = [Relation(*x)._asdict() for x in js["n_ary_relations"]]
 
+                    # Remove clusters with no entries
                     corefs = {k: v for k, v in corefs_all.items() if len(v) > 0}
                     n_ary_relations = [
                         r for r in n_ary_relations_all if all([v in corefs for k, v in r.items() if k in used_entities])
@@ -84,8 +80,10 @@ class PwCJsonReader(DatasetReader):
 
                     entities_dict = {tuple([v[0], v[1]]): v[2] for v in entities}
 
+                    #Map cluster names to integer cluster ids
                     map_coref_keys = {k: i for i, k in enumerate(sorted(list(corefs.keys())))}
 
+                    #Map Spans to list of clusters ids it belong to.
                     corefs_indexed = {}
                     for key in corefs:
                         for span in corefs[key]:
@@ -95,24 +93,26 @@ class PwCJsonReader(DatasetReader):
 
                     corefs_indexed = {tuple(span): sorted(v) for span, v in corefs_indexed.items()}
 
-                    true_entities = {k: [] for k in used_entities}
+                    #Map types to list of cluster ids that are of that type
+                    type_to_clusters_map = {k: [] for k in used_entities}
 
                     for key in corefs:
                         types = [entities_dict[tuple(span)][1] for span in corefs[key]]
                         assert len(set(types)) == 1, breakpoint()
-                        true_entities[Counter(types).most_common(1)[0][0]].append(map_coref_keys[key])
+                        type_to_clusters_map[types[0]].append(map_coref_keys[key])
 
+                    #Map relations to list of cluster ids in it.
                     relations_indexed = {}
-                    for i, rel in enumerate(n_ary_relations):
-                        relations_indexed[i] = []
+                    for rel_idx, rel in enumerate(n_ary_relations):
+                        relations_indexed[rel_idx] = []
                         for entity in used_entities:
-                            relations_indexed[i].append(map_coref_keys[rel[entity]])
-                            true_entities[entity].append(map_coref_keys[rel[entity]])
+                            relations_indexed[rel_idx].append(map_coref_keys[rel[entity]])
+                            type_to_clusters_map[entity].append(map_coref_keys[rel[entity]])
 
-                        relations_indexed[i] = tuple(relations_indexed[i])
+                        relations_indexed[rel_idx] = tuple(relations_indexed[rel_idx])
 
-                    for k in true_entities:
-                        true_entities[k] = list(set(true_entities[k]))
+                    for k in type_to_clusters_map:
+                        type_to_clusters_map[k] = list(set(type_to_clusters_map[k]))
 
                     coref_labels, coref_mask, coref_features = self.extract_coref_features(
                         entities, words, corefs_indexed
@@ -128,7 +128,7 @@ class PwCJsonReader(DatasetReader):
                     document_metadata = {
                         "map_coref_keys": map_coref_keys,
                         "relations_indexed": relations_indexed,
-                        "true_entities": true_entities,
+                        "type_to_clusters_map": type_to_clusters_map,
                         "doc_key": doc_key,
                         "doc_length": len(words),
                         "coref_labels": coref_labels,
@@ -207,6 +207,7 @@ class PwCJsonReader(DatasetReader):
         entities_grouped = [{} for _ in range(len(paragraphs))]
         corefs_grouped = [{} for _ in range(len(paragraphs))]
 
+        #Group entities into paragraphs they belong to
         for e in entities:
             done = False
             for para_id, p in enumerate(paragraphs):
@@ -218,6 +219,8 @@ class PwCJsonReader(DatasetReader):
             assert done
 
         zipped = zip(paragraphs, entities_grouped, corefs_grouped)
+
+        #Remove Empty Paragraphs
         paragraphs, entities_grouped, corefs_grouped = [], [], []
         for p, e, c in zipped:
             if p[1] - p[0] == 0:
@@ -351,8 +354,6 @@ class PwCTagJsonReader(PwCJsonReader):
             ner_dict=ner_dict,
             cluster_dict=cluster_dict,
             doc_key=doc_key,
-            start_ix=0,
-            end_ix=len(sentence),
             sentence_num=sentence_num,
             start_pos_in_doc=start_ix,
             end_pos_in_doc=end_ix,

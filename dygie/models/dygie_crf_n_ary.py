@@ -14,11 +14,11 @@ from allennlp.training.metrics import Average
 from overrides import overrides
 
 # Import submodules.
-from dygie.models.coref_crf import CorefResolverCRF
-from dygie.models.n_ary_relation import RelationExtractor as NAryRelationExtractor
-from dygie.models.ner_crf_tagger import NERTagger
-from dygie.models.relation_pwc_crf import RelationExtractor
-from dygie.models.span_classifier_binary import SpanClassifier
+from dygie.models.coreference.coref_gold_spans import CorefResolverCRF
+from dygie.models.relations.n_ary_relation import RelationExtractor as NAryRelationExtractor
+from dygie.models.ner.ner_crf_tagger import NERTagger
+from dygie.models.relations.relation_pwc_crf import RelationExtractor
+from dygie.models.span_classifiers.span_classifier_binary import SpanClassifier
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -82,26 +82,24 @@ class DyGIECRF(Model):
         metadata=None,
     ):
 
-        output_embedding = self.embedding_forward(text, metadata)
+        output_embedding = self.embedding_forward(text)
         output_ner = self.ner_forward(output_embedding, ner_entity_labels, metadata)
-        output_span_embeddings = self.span_embeddings_forward(output_embedding, spans, span_entity_labels, span_features, metadata)
+        output_span_embeddings = self.span_embeddings_forward(
+            output_embedding, spans, span_entity_labels, span_features, metadata
+        )
 
         output_coref = self.coref_forward(output_span_embeddings, metadata)
 
         output_relation, output_linker, output_n_ary_relation = self.link_and_relation_forward(
-            output_span_embeddings,
-            metadata,
-            span_link_labels,
-            relation_index,
-            span_coref_labels,
+            output_span_embeddings, metadata, span_link_labels, relation_index, span_coref_labels
         )
 
         loss = (
-            1.0 * output_ner["loss"]
-            + 0.0 * output_relation["loss"]
-            + 0.0 * output_linker["loss"]
-            + 0.0 * output_n_ary_relation["loss"]
-            + 0.0 * output_coref["loss"]
+            self._loss_weights['ner'] * output_ner["loss"]
+            + self._loss_weights['relation'] * output_relation["loss"]
+            + self._loss_weights['linked'] * output_linker["loss"]
+            + self._loss_weights['n_ary_relation'] * output_n_ary_relation["loss"]
+            + self._loss_weights['coref'] * output_coref["loss"]
         )
 
         output_dict = dict(
@@ -119,10 +117,11 @@ class DyGIECRF(Model):
 
         return output_dict
 
-    def embedding_forward(self, text, metadata):
+    def embedding_forward(self, text):
         # Shape: (batch_size, max_sentence_length, embedding_size)
         text_embeddings = self._lexical_dropout(self._text_field_embedder(text))
-        text_embeddings, text_mask, sentence_lengths = self.extract_sentence_from_context(metadata, text_embeddings)
+        text_mask = util.get_text_field_mask(text)
+        sentence_lengths = text_mask.sum(-1)
 
         # # Shape: (total_sentence_length, encoding_dim)
         # flat_text_embeddings = text_embeddings.view(-1, text_embeddings.size(-1))
@@ -158,34 +157,38 @@ class DyGIECRF(Model):
         return output_embedding
 
     def span_embeddings_forward(self, output_embedding, spans, span_entity_labels, span_features, metadata):
-        output_span_embeddings = {'valid' : False}
+        output_span_embeddings = {"valid": False}
 
         if spans.nelement() != 0:
             span_mask, spans, span_embeddings = self.extract_span_embeddings(output_embedding["contextualised"], spans)
 
-            if span_mask.sum() != 0 : 
+            if span_mask.sum() != 0:
                 span_offset = self.offset_span_by_para_start(metadata, spans, span_mask)
                 span_position = self.get_span_position(metadata, span_offset)
-                span_entity_labels_one_hot = self.get_span_one_hot_labels("span_entity_labels", span_entity_labels, spans)
+                span_entity_labels_one_hot = self.get_span_one_hot_labels(
+                    "span_entity_labels", span_entity_labels, spans
+                )
 
-                link_embeddings = torch.cat([span_embeddings, span_position, span_entity_labels_one_hot, span_features.float()], dim=-1)
+                span_features = torch.cat([span_position, span_entity_labels_one_hot, span_features.float()], dim=-1)
+                featured_span_embeddings = torch.cat([span_embeddings, span_features], dim=-1)
                 span_ix = span_mask.view(-1).nonzero().squeeze(1).long()
 
                 output_span_embeddings = {
                     "span_mask": span_mask,
-                    "span_ix" : span_ix,
+                    "span_ix": span_ix,
                     "spans": self._flatten_span_info(span_offset, span_ix),
                     "span_embeddings": self._flatten_span_info(span_embeddings, span_ix),
-                    "link_embeddings": self._flatten_span_info(link_embeddings, span_ix),
+                    "featured_span_embeddings": self._flatten_span_info(featured_span_embeddings, span_ix),
                     "span_entity_labels": self._flatten_span_info(span_entity_labels_one_hot, span_ix),
-                    "valid" : True
+                    "span_features": self._flatten_span_info(span_features.float(), span_ix),
+                    "valid": True,
                 }
 
         return output_span_embeddings
 
     def coref_forward(self, output_span_embeddings, metadata):
-        output_coref = {'loss' : 0.0}
-        if False and output_span_embeddings['valid'] :
+        output_coref = {"loss": 0.0}
+        if False and output_span_embeddings["valid"]:
             output_coref = self._coref.compute_representations(
                 output_span_embeddings["spans"],
                 output_span_embeddings["span_mask"],
@@ -202,39 +205,44 @@ class DyGIECRF(Model):
         output_linker = {"loss": 0.0}
         output_n_ary_relation = {"loss": 0.0}
 
-        if output_span_embedding['valid'] :
-            spans, link_embeddings, span_ix = (
+        if output_span_embedding["valid"]:
+            spans, featured_span_embeddings, span_ix = (
                 output_span_embedding["spans"],
-                output_span_embedding["link_embeddings"],
-                output_span_embedding['span_ix']
+                output_span_embedding["featured_span_embeddings"],
+                output_span_embedding["span_ix"],
             )
             # Linking
 
             span_link_labels = self._flatten_span_info(span_link_labels.unsqueeze(-1), span_ix)
             span_coref_labels = self._flatten_span_info(span_coref_labels, span_ix)
+            output_linker = self._link_classifier(
+                spans=spans,
+                span_embeddings=featured_span_embeddings,
+                span_features=output_span_embedding["span_features"],
+                span_labels=span_link_labels.squeeze(-1),
+                metadata=metadata,
+            )
 
-            output_linker = self._link_classifier(spans, link_embeddings, span_link_labels.squeeze(-1), metadata=metadata)
-
-            if link_threshold is not None :
+            if link_threshold is not None:
                 # Keep only clusters with linked entities
-                ner_probs = output_linker['ner_probs'].squeeze(0)
+                ner_probs = output_linker["ner_probs"].squeeze(0)
                 ner_probs = (ner_probs > link_threshold).long()
 
-                clusters_to_keep = ((span_coref_labels.squeeze(0) * ner_probs[:, None]).sum(0) == 0)
+                clusters_to_keep = (span_coref_labels.squeeze(0) * ner_probs[:, None]).sum(0) == 0
                 span_coref_labels[:, :, clusters_to_keep] = 0
 
             if relation_index is not None or self.prediction_mode:
                 # Relation Extraction
-                # output_relation = self._span_binary_relation.compute_representations(
-                #     spans, span_mask, link_embeddings, span_coref_labels, relation_index, metadata
-                # )
+                output_relation = self._span_binary_relation.compute_representations(
+                    spans, span_mask, link_embeddings, span_coref_labels, relation_index, metadata
+                )
 
-                cluster_type_batched = metadata[0]["document_metadata"]["true_entities"]
+                cluster_type_batched = metadata[0]["document_metadata"]["type_to_clusters_map"]
                 relation_index_dict = metadata[0]["document_metadata"]["relations_indexed"]
 
                 output_n_ary_relation = self._cluster_n_ary_relation.compute_representations(
                     spans,
-                    link_embeddings,
+                    featured_span_embeddings,
                     span_coref_labels,
                     cluster_type_batched,
                     relation_index_dict,
@@ -269,7 +277,7 @@ class DyGIECRF(Model):
         emb_flat = span_info_batched.view(-1, feature_size)
         span_info_flat = emb_flat[span_ix].unsqueeze(0)
         return span_info_flat
-    
+
     @staticmethod
     def get_span_position(metadata, span_offset):
         doc_length = metadata[0]["document_metadata"]["doc_length"]
@@ -278,29 +286,18 @@ class DyGIECRF(Model):
 
     @staticmethod
     def offset_span_by_para_start(metadata, spans, span_mask):
-        start_pos_in_doc = torch.LongTensor([x["start_pos_in_doc"] for x in metadata]).to(spans.device)
-        sentence_offset = start_pos_in_doc.unsqueeze(1).unsqueeze(2)
-        span_offset = spans + (sentence_offset * span_mask.unsqueeze(-1).long())
+        start_pos_in_doc = torch.LongTensor([x["start_pos_in_doc"] for x in metadata]).to(spans.device) #(B,)
+        para_offset = start_pos_in_doc.unsqueeze(1).unsqueeze(2) #(B, 1, 1)
+        span_offset = spans + (para_offset * span_mask.unsqueeze(-1).long())
         return span_offset
 
     def extract_span_embeddings(self, contextualized_embeddings, spans):
         attended_span_embeddings = self._attentive_span_extractor(contextualized_embeddings, spans)
-        span_mask = (spans[:, :, 0] >= 0).float()
+        span_mask = (spans[:, :, 0] >= 0).long()
         spans = F.relu(spans.float()).long()
         endpoint_span_embeddings = self._endpoint_span_extractor(contextualized_embeddings, spans)
         span_embeddings = torch.cat([endpoint_span_embeddings, attended_span_embeddings], -1)
         return span_mask, spans, span_embeddings
-
-    def extract_sentence_from_context(self, metadata, text_embeddings):
-        sentence_spans = torch.LongTensor([[x["start_ix"], x["end_ix"]] for x in metadata]).to(text_embeddings.device)
-        sentence_lengths = sentence_spans[:, 1] - sentence_spans[:, 0]
-        max_sentence_length = sentence_lengths.max()
-
-        range_vector = util.get_range_vector(max_sentence_length, util.get_device_of(text_embeddings)).view(1, -1)
-        span_indices = torch.clamp_max(sentence_spans[:, 0:1] + range_vector, text_embeddings.shape[1] - 1)
-        text_mask = util.get_mask_from_sequence_lengths(sentence_lengths, max_length=max_sentence_length)
-        text_embeddings = util.batched_index_select(text_embeddings, span_indices) * text_mask.unsqueeze(-1).float()
-        return text_embeddings, text_mask, sentence_lengths
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]):
@@ -312,28 +309,29 @@ class DyGIECRF(Model):
 
         return res
 
-    def decode_relations(self, batch, link_threshold) :
-        output_embedding = self.embedding_forward(text=batch["text"], metadata=batch["metadata"])
+    def decode_relations(self, batch, link_threshold):
+        output_embedding = self.embedding_forward(text=batch["text"])
         output_span_embedding = self.span_embeddings_forward(
             output_embedding=output_embedding,
             spans=batch["spans"],
             span_entity_labels=batch["span_entity_labels"],
+            span_features=batch["span_features"],
             metadata=batch["metadata"],
         )
 
         output_relation, output_linker, output_n_ary_relation = self.link_and_relation_forward(
             output_span_embedding=output_span_embedding,
-            metadata=batch['metadata'],
-            span_link_labels=batch['span_link_labels'],
-            relation_index=batch.get('relation_index', None),
-            span_coref_labels=batch['span_coref_labels'],
-            link_threshold=link_threshold
+            metadata=batch["metadata"],
+            span_link_labels=batch["span_link_labels"],
+            relation_index=batch.get("relation_index", None),
+            span_coref_labels=batch["span_coref_labels"],
+            link_threshold=link_threshold,
         )
 
         res = {}
-        res['relation'] = self._span_binary_relation.decode(output_relation)
-        res['linked'] = self._link_classifier.decode(output_linker)
-        res['n_ary_relation'] = self._cluster_n_ary_relation.decode(output_n_ary_relation)
+        res["relation"] = self._span_binary_relation.decode(output_relation)
+        res["linked"] = self._link_classifier.decode(output_linker)
+        res["n_ary_relation"] = self._cluster_n_ary_relation.decode(output_n_ary_relation)
 
         return res
 

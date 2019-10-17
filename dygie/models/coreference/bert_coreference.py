@@ -11,8 +11,8 @@ from allennlp.modules.token_embedders.bert_token_embedder import PretrainedBertE
 from dygie.training.thresholding_f1_metric import BinaryThresholdF1
 
 
-@Model.register("bert_for_entity_linking")
-class BertForClassification(Model):
+@Model.register("bert_coreference")
+class BertCoreference(Model):
     def __init__(
         self,
         vocab: Vocabulary,

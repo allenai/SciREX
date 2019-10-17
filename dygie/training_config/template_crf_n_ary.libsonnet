@@ -162,7 +162,8 @@ function(p) {
       link_classifier: {
         mention_feedforward: make_feedforward(span_emb_dim + 1 + 4 + 5),
         label_namespace: "span_link_labels",
-        initializer: module_initializer
+        initializer: module_initializer,
+        n_features: 1 + 4 + 5
       },
       n_ary_relation: {
         antecedent_feedforward: make_feedforward(4*(span_emb_dim + 1 + 4 + 5)),

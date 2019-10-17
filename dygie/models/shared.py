@@ -42,3 +42,10 @@ def fields_to_batches(d):
     keys = d.keys()
     res = [{k: d[k][i] for k in keys} for i in range(length)]
     return res
+
+def flatten_span_info(span_info_batched, span_ix):
+    assert len(span_info_batched.shape) == 3
+    feature_size = span_info_batched.size(-1)
+    emb_flat = span_info_batched.view(-1, feature_size)
+    span_info_flat = emb_flat[span_ix].unsqueeze(0)
+    return span_info_flat

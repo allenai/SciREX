@@ -14,8 +14,8 @@ from allennlp.training.metrics import CategoricalAccuracy, FBetaMeasure
 from dygie.training.thresholding_f1_metric import BinaryThresholdF1
 
 
-@Model.register("entity_linker")
-class EntityLinker(Model):
+@Model.register("standard_coreference")
+class StandardCoreference(Model):
     """
     Copied from Allennlp : Decomposable Attention
     """
