@@ -26,7 +26,7 @@ Relations
 
 1. [] Find some way to incorporate features from sciERC
 2. [] Direct Supervision Annotation
-3. [] Better section information
+3. [x] Better section information
 4. [] Features from Tables
 5. [] Teacher Forcing
 

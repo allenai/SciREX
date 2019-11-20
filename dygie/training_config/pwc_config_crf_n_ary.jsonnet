@@ -24,23 +24,26 @@ local params = {
   use_bert: true,
   use_lstm: stringToBool(std.extVar("USE_LSTM")),
   bert_fine_tune: std.extVar("BERT_FINE_TUNE"),
+  set_to_eval: false, #stringToBool(std.extVar('SET_TO_EVAL')),
+  document_filter: std.extVar('DOCUMENT_FILTER'),
   // Specifies the model parameters.
   lstm_hidden_size: 200,
   lstm_n_layers: 1,
   feedforward_layers: 2,
   feedforward_dim: 150,
-  feedforward_dropout: 0.0,
-  lexical_dropout: 0.0,
-  lstm_dropout: 0.0,
+  feedforward_dropout: 0.2,
+  lexical_dropout: 0.2,
+  lstm_dropout: 0.2,
   loss_weights: {          // Loss weights for the modules.
-    ner: 0.0,
+    ner: std.extVar('nw'),
     relation: 0.0,
     coref: 0.0,
-    linked: 0.0,
-    n_ary_relation: 1.0
+    linked: std.extVar('lw'),
+    n_ary_relation: std.extVar('rw')
   },
 
   label_namespace: "ner_entity_labels",
+  relation_cardinality: std.parseInt(std.extVar('relation_cardinality')),
 
   // Model training
   batch_size: 60,

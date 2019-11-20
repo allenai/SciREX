@@ -102,7 +102,7 @@ class SpanClassifier(Model):
         # elif self._balancing_strategy == 'class_weight' :
         #     class_weight = self._class_weight
 
-        loss = torch.nn.BCELoss(reduction="sum")(ner_probs_flat, ner_labels_flat.float())
+        loss = torch.nn.BCELoss(reduction="mean")(ner_probs_flat, ner_labels_flat.float())
         return loss
 
     @overrides

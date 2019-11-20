@@ -13,9 +13,9 @@ from allennlp.modules.span_extractors import EndpointSpanExtractor, SelfAttentiv
 from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 
 # Import submodules.
-from dygie.models.coref import CorefResolver
-from dygie.models.ner_crf_tagger import NERTagger
-from dygie.models.relation_pwc_crf import RelationExtractor
+from dygie.models.coreference.coref_all_spans import CorefResolver
+from dygie.models.ner.ner_crf_tagger import NERTagger
+from dygie.models.relations.relation_pwc_crf import RelationExtractor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

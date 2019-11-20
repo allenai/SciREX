@@ -1,6 +1,10 @@
 from overrides import overrides
 from allennlp.training.metrics.metric import Metric
-from dygie.training.f1 import compute_f1, safe_div
+
+import pandas as pd
+from sklearn.metrics import classification_report
+
+from dygie.training.f1 import compute_threshold
 
 
 class NAryRelationMetrics(Metric):
@@ -8,47 +12,81 @@ class NAryRelationMetrics(Metric):
         self.reset()
 
     @overrides
-    def __call__(self, candidate_relation_list, gold_relation_list, candidate_relation_score, doc_id):
-        candidate_relation_score, = self.unwrap_to_tensors(candidate_relation_score.squeeze(0))
-        candidate_relation_score = list(candidate_relation_score.numpy())
-        assert len(candidate_relation_list) == len(candidate_relation_score), breakpoint()
-        candidate_relation_list = [(doc_id, tuple(rel)) for rel in candidate_relation_list]
-        gold_relation_list = [(doc_id, tuple(rel)) for rel in gold_relation_list]
+    def __call__(
+        self,
+        candidate_relation_list,
+        candidate_relation_labels,
+        candidate_relation_scores,
+        doc_id,
+    ):
+        try:
+            candidate_relation_scores, = self.unwrap_to_tensors(
+                candidate_relation_scores
+            )
+            candidate_relation_scores = list(candidate_relation_scores.numpy())
+        except:
+            breakpoint()
 
-        self._total_gold |= set(gold_relation_list)
-        for cr, sc in zip(candidate_relation_list, candidate_relation_score) :
-            if cr not in self._total_candidates or self._total_candidates[cr] < sc :
-                self._total_candidates[cr] = sc
+        assert len(candidate_relation_list) == len(
+            candidate_relation_scores
+        ), breakpoint()
+        assert len(candidate_relation_labels) == len(
+            candidate_relation_scores
+        ), breakpoint()
+
+        for relation, label, score in zip(
+            candidate_relation_list,
+            candidate_relation_labels,
+            candidate_relation_scores,
+        ):
+            relation = (doc_id, tuple(relation))
+            if relation not in self._candidate_labels:
+                self._candidate_labels[relation] = label
+
+            assert self._candidate_labels[relation] == label
+
+            if (
+                relation not in self._candidate_scores
+                or self._candidate_scores[relation] < score
+            ):
+                self._candidate_scores[relation] = score
 
     @overrides
-    def get_metric(self, threshold, reset=False):
-        predicted_relation_list = set([cr for cr, v in self._total_candidates.items() if v > threshold])
-        matched_relation_list = predicted_relation_list & self._total_gold
+    def get_metric(self, reset=False):
+        if len(self._candidate_scores) == 0:
+            return {}
 
-        precision, recall, f1 = compute_f1(len(predicted_relation_list), len(self._total_gold), len(matched_relation_list))
+        prediction_scores, gold = [], []
+        for k in self._candidate_labels:
+            prediction_scores.append(self._candidate_scores[k])
+            gold.append(self._candidate_labels[k])
 
-        matched_candidate_ratio = safe_div(len(matched_relation_list), len(self._total_candidates))
-        predicted_candidate_ratio = safe_div(len(predicted_relation_list), len(self._total_candidates))
+        threshold = compute_threshold(prediction_scores, gold)
+        prediction = [
+            1 if self._candidate_scores[k] > threshold else 0
+            for k in self._candidate_labels
+        ]
 
-        gold_candidate_overlap = len(self._total_gold & set(self._total_candidates.keys()))
-        considered_ratio = safe_div(gold_candidate_overlap, len(self._total_gold))
-        gold_ratio = safe_div(gold_candidate_overlap, len(self._total_candidates))
+        try:
+            metrics = pd.io.json.json_normalize(
+                classification_report(gold, prediction, output_dict=True), sep="."
+            ).to_dict(orient="records")[0]
+        except:
+            breakpoint()
+        metrics = {k.replace(" ", "-"): v for k, v in metrics.items()}
+
+        metrics["1.support_pred"] = sum(prediction)
+        metrics["0.support_pred"] = len(prediction) - sum(prediction)
+
+        metrics["threshold"] = float(threshold)
 
         # Reset counts if at end of epoch.
         if reset:
             self.reset()
 
-        return {
-            "precision" : precision,
-            "recall" : recall,
-            "f1-measure" : f1,
-            "matched_candidate_ratio" : matched_candidate_ratio,
-            "predicted_candidate_ratio" : predicted_candidate_ratio,
-            'considered_ratio' : considered_ratio,
-            'gold_ratio' : gold_ratio
-        }
+        return metrics
 
     @overrides
     def reset(self):
-        self._total_gold = set()
-        self._total_candidates = {}
+        self._candidate_labels = {}
+        self._candidate_scores = {}

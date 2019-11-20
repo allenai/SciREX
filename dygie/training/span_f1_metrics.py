@@ -98,15 +98,41 @@ class SpanBasedF1Measure(Metric):
             predicted_spans = tags_to_spans_function(predicted_string_labels, self._ignore_classes)
             gold_spans = tags_to_spans_function(gold_string_labels, self._ignore_classes)
 
-            for span in predicted_spans:
-                if span in gold_spans:
-                    self._true_positives[span[0]] += 1
-                    gold_spans.remove(span)
-                else:
-                    self._false_positives[span[0]] += 1
-            # These spans weren't predicted.
-            for span in gold_spans:
-                self._false_negatives[span[0]] += 1
+            typed_predicted_spans = defaultdict(list)
+            typed_gold_spans = defaultdict(list)
+
+            for label, span in predicted_spans :
+                typed_predicted_spans[label].append(span)
+
+            for label, span in gold_spans :
+                typed_gold_spans[label].append(span)
+
+            for label in typed_predicted_spans :
+                for p_span in typed_predicted_spans[label] :
+                    matched = False
+                    for g_span in typed_gold_spans[label] :
+                        iou = span_match(p_span, g_span)
+                        if iou > 0.5 :
+                            self._true_positives[label] += 1
+                            matched = True
+                            typed_gold_spans[label].remove(g_span)
+                            break
+                    if not matched :
+                        self._false_positives[label] += 1
+
+            for label in typed_gold_spans :
+                for span in typed_gold_spans[label] :
+                    self._false_negatives[label] += 1
+
+            # for span in predicted_spans:
+            #     if span in gold_spans:
+            #         self._true_positives[span[0]] += 1
+            #         gold_spans.remove(span)
+            #     else:
+            #         self._false_positives[span[0]] += 1
+            # # These spans weren't predicted.
+            # for span in gold_spans:
+            #     self._false_negatives[span[0]] += 1
 
     def get_metric(self, reset: bool = False):
         all_tags: Set[str] = set()
@@ -147,3 +173,10 @@ class SpanBasedF1Measure(Metric):
         self._true_positives = defaultdict(int)
         self._false_positives = defaultdict(int)
         self._false_negatives = defaultdict(int)
+
+def span_match(span_1, span_2) :
+    sa, ea = span_1
+    sb, eb = span_2
+    ea, eb = ea + 1, eb + 1
+    iou = (min(ea, eb) - max(sa, sb)) / (max(eb, ea) - min(sa, sb))
+    return iou

@@ -8,6 +8,13 @@ import json
 
 is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
 
+def convert_cardinalities_to_spans(cardinalities) :
+    cardinalities = np.array(cardinalities)
+    span_ends = np.cumsum(cardinalities)
+    span_starts = span_ends - cardinalities
+
+    return list(zip(list(span_starts), list(span_ends)))
+
 
 def process_rows_for_doc(rows):
     doc_id = rows.name
@@ -15,11 +22,14 @@ def process_rows_for_doc(rows):
         rows = rows.sort_values(by=["para_num", "sentence_num"])
     except:
         breakpoint()
-    n_paragraphs = rows["para_num"].max() + 1
 
+    n_paragraphs = rows["para_num"].max() + 1
     n_sections = rows["section_id"].max() + 1
+    n_sentences = rows['sentence_num'].max() + 1
+
     sections = [0 for _ in range(n_sections)]
     paragraphs = [0 for _ in range(n_paragraphs)]
+    sentences = [0 for _ in range(n_sentences)]
 
     words = []
     ner = []
@@ -41,6 +51,7 @@ def process_rows_for_doc(rows):
         ner += entities
         paragraphs[row["para_num"]] += len(row["words"])
         sections[row["section_id"]] += len(row["words"])
+        sentences[row['sentence_num']] += len(row['words'])
 
         if row["para_id"] == 0 and row["sentence_id"] == 0:
             section_heads[row["section_id"]] = row["words"]
@@ -61,29 +72,30 @@ def process_rows_for_doc(rows):
     for i, e in enumerate(ner):
         ner[i] = e[:-1]
 
-    para_ends = np.cumsum(paragraphs)
-    para_starts = para_ends - np.array(paragraphs)
+    sentences = convert_cardinalities_to_spans(sentences)
+    sections = convert_cardinalities_to_spans(sections)
 
-    paragraphs = list(zip(list(para_starts), list(para_ends)))
+    grouped_sentences = [[] for _ in range(len(sections))]
+    for sent_span in sentences :
+        is_in_n_sections = 0
+        for i, section_span in enumerate(sections) :
+            if is_x_in_y(sent_span, section_span) :
+                grouped_sentences[i].append(sent_span)
+                is_in_n_sections += 1
 
-    section_ends = np.cumsum(sections)
-    section_starts = section_ends - np.array(sections)
-
-    sections = list(zip(list(section_starts), list(section_ends)))
+        assert is_in_n_sections == 1
 
     for e in ner:
-        assert any([is_x_in_y(e, x) for x in paragraphs])
+        assert any([is_x_in_y(e, x) for x in sections])
 
     n_ary_relations = rows[0]["Relations"]
 
     return {
-        "paragraphs": paragraphs,
+        "sentences" : grouped_sentences,
         "sections": sections,
-        "section_heads": section_heads,
         "words": words,
         "ner": ner,
         "coref": coreference,
-        "relations": relations,
         "doc_id": doc_id,
         "n_ary_relations": n_ary_relations,
     }

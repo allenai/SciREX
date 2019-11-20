@@ -11,9 +11,9 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import Field, TextField, LabelField, MetadataField, ArrayField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
-from allennlp.data.tokenizers import Tokenizer, WordTokenizer, Token
+from allennlp.data.tokenizers import Tokenizer, Token
+from allennlp.data.tokenizers import SpacyTokenizer as WordTokenizer
 from itertools import combinations
-from random import shuffle
 from collections import Counter
 from baseline.baseline import character_similarity_features
 

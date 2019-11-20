@@ -3,18 +3,6 @@
 function(p) {
   // Storing constants.
 
-  local validation_metrics = {
-    "ner": "+ner_f1-measure",
-    "rel": "+rel_f1",
-    "coref": "+coref_f1"
-  },
-
-  local display_metrics = {
-    "ner": ["ner_precision", "ner_recall", "ner_f1-measure"],
-    "rel": ["rel_precision", "rel_recall", "rel_f1", "rel_threshold"],
-    "coref": ["coref_precision", "coref_recall", "coref_f1", "coref_mention_recall"]
-  },
-
   local glove_dim = 300,
   local bert_base_dim = 768,
   local char_n_filters = 128,
@@ -44,7 +32,9 @@ function(p) {
   local context_encoder_dim = if p.use_lstm then 2 * p.lstm_hidden_size else token_embedding_dim,
   local endpoint_span_emb_dim = 2 * context_encoder_dim,
   local attended_span_emb_dim = context_encoder_dim,
-  local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim, 
+  local span_emb_dim = endpoint_span_emb_dim + attended_span_emb_dim,
+  local n_features = 1 + 4 + 5,
+  local featured_emb_dim = span_emb_dim + n_features,
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -104,9 +94,10 @@ function(p) {
           trainable: false
         },
         [if p.use_bert then "bert"]: {
-            type: "bert-pretrained",
+            type: "bert-pretrained-modified",
             pretrained_model: std.extVar("BERT_WEIGHTS"),
-            requires_grad: p.bert_fine_tune
+            requires_grad: p.bert_fine_tune,
+            set_untrained_to_eval : p.set_to_eval
         },
         "token_characters": {
           type: "character_encoding",
@@ -131,6 +122,7 @@ function(p) {
   dataset_reader: {
     type: p.dataset_reader,
     token_indexers: token_indexers,
+    document_filter_type: p.document_filter
   },
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
@@ -142,11 +134,11 @@ function(p) {
     initializer: dygie_initializer,
     loss_weights: p.loss_weights,
     lexical_dropout: p.lexical_dropout,
-    display_metrics: display_metrics[p.target],
+    display_metrics: ["validation_metric"],
     context_layer: if p.use_lstm then lstm_context_encoder else pass_through_encoder,
     modules: {
       coref: {
-        antecedent_feedforward: make_feedforward(span_emb_dim + 1 + 4 + 5),
+        antecedent_feedforward: make_feedforward(featured_emb_dim),
         initializer: module_initializer
       },
       ner: {
@@ -156,18 +148,19 @@ function(p) {
         initializer: module_initializer,
       },
       relation: {
-        antecedent_feedforward: make_feedforward(3*(span_emb_dim + 1 + 4 + 5)),
+        antecedent_feedforward: make_feedforward(3*featured_emb_dim),
         initializer: module_initializer
       },
       link_classifier: {
-        mention_feedforward: make_feedforward(span_emb_dim + 1 + 4 + 5),
+        mention_feedforward: make_feedforward(featured_emb_dim),
         label_namespace: "span_link_labels",
         initializer: module_initializer,
-        n_features: 1 + 4 + 5
+        n_features: n_features
       },
       n_ary_relation: {
-        antecedent_feedforward: make_feedforward(4*(span_emb_dim + 1 + 4 + 5)),
-        initializer: module_initializer
+        antecedent_feedforward: make_feedforward(p.relation_cardinality*featured_emb_dim),
+        initializer: module_initializer,
+	      relation_cardinality: p.relation_cardinality
       },
     }
   },
@@ -182,9 +175,9 @@ function(p) {
   trainer: {
     num_epochs: p.num_epochs,
     grad_norm: 5.0,
-    patience : 100,
+    patience : 10,
     cuda_device : std.parseInt(std.extVar("CUDA_DEVICE")),
-    validation_metric: validation_metrics[p.target],
+    validation_metric: '+validation_metric',
     learning_rate_scheduler: p.learning_rate_scheduler,
     optimizer: p.optimizer,
     num_serialized_models_to_keep: 1,
