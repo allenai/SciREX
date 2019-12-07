@@ -11,12 +11,18 @@ from dygie.models.global_analysis import *
 def cluster_with_clustering(matrix, threshold, plot=True) :
     scores = []
     matrix = (matrix + matrix.T) + np.eye(*matrix.shape)
-    for n in range(2, matrix.shape[0]) :
+    for n in range(2, matrix.shape[0] if matrix.shape[0] > 2 else 3) :
         clustering = AgglomerativeClustering(n_clusters=n, linkage='complete', affinity='precomputed').fit(1 - matrix)
-        scores.append(silhouette_score(1 - matrix, clustering.labels_, metric='precomputed'))
-    if plot :
-        plt.plot(range(2, matrix.shape[0]), scores)
-    best_score = max(scores)
+        if matrix.shape[0] > 2 :
+            scores.append(silhouette_score(1 - matrix, clustering.labels_, metric='precomputed'))
+        else :
+            scores.append(1)
+    try :
+        if False :
+            plt.plot(range(2, matrix.shape[0]), scores)
+        best_score = max(scores)
+    except :
+        breakpoint()
     best_n = scores.index(best_score) + 2
     clustering = AgglomerativeClustering(n_clusters=best_n, linkage='complete', affinity='precomputed').fit(1 - matrix)
     return clustering.n_clusters_, clustering.labels_
@@ -46,7 +52,7 @@ def cluster_with_dbscan_clustering(matrix, threshold, plot=True) :
     return max(labels) + 1, labels
 
 from scipy.sparse.csgraph import connected_components
-def cluster_with_connected_components(matrix, threshold) :
+def cluster_with_connected_components(matrix, threshold, plot) :
     graph = ((matrix + matrix.T) > threshold).astype(int)
     n_components, labels = connected_components(csgraph=graph, directed=False, return_labels=True)
     return n_components, labels
@@ -58,12 +64,12 @@ def map_back_to_spans(document, span_field, labels) :
         span_to_label_map[span] = labels[i]
     return span_to_label_map
 
-def do_clustering(document, span_field, coref_field, plot=True) :
+def do_clustering(document, span_field, coref_field, plot=True, threshold=0.5) :
     matrix = generate_matrix_for_document(document, span_field, coref_field)
-    n_clusters, cluster_labels = cluster_with_clustering(matrix, None, plot)
+    n_clusters, cluster_labels = cluster_with_clustering(matrix, threshold, plot)
     span_to_cluster_label = map_back_to_spans(document, span_field, cluster_labels)
 
-    clusters = [{'spans' : [], 'words': set(), 'types' : set(), 'name' : None} for _ in range(n_clusters)]
+    clusters = [{'spans' : [], 'words': set(), 'types' : set()} for _ in range(n_clusters)]
     for s, l in span_to_cluster_label.items() :
         clusters[l]['spans'].append(s)
         clusters[l]['words'].add(" ".join(document['words'][s[0]:s[1]]))
@@ -72,10 +78,9 @@ def do_clustering(document, span_field, coref_field, plot=True) :
     for c in clusters :
         strings = [s for s in list(c['words'])]
         lengths = [len(s) for s in strings]
-        c['name'] = strings[lengths.index(max(lengths))]
-        c['type'] = list(c['types'])[0].split('_')[1]
+        c['type'] = list(c['types'])[0]
 
-    return clusters, span_to_cluster_label, cluster_labels
+    return clusters
 
 def get_linked_clusters(clusters) :
     linked_clusters = []

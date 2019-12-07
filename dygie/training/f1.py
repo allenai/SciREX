@@ -12,9 +12,9 @@ def safe_div(num, denom, m=100):
         return -1
 
 
-def compute_f1(predicted, gold, matched):
-    precision = safe_div(matched, predicted)
-    recall = safe_div(matched, gold)
+def compute_f1(predicted, gold, matched, m=100):
+    precision = safe_div(matched, predicted, m)
+    recall = safe_div(matched, gold, m)
     f1 = safe_div(2 * precision * recall, precision + recall, m=1)
     return precision, recall, f1
 

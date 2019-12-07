@@ -37,12 +37,20 @@ class RelationExtractor(Model):
 
         self._relation_cardinality = relation_cardinality
 
+        self._pos_weight_dict = {
+            2: 1.0, 3: 1.0, 4: 3.3
+        }
+
+        self._pos_weight = self._pos_weight_dict[relation_cardinality]
+
         self._relation_type_map = {
             tuple(e): i for i, e in enumerate(combinations(used_entities, self._relation_cardinality))
         }
 
         self._binary_scores = BinaryThresholdF1()
         self._global_scores = NAryRelationMetrics()
+
+        self.ignore_empty_clusters = False
 
         initializer(self)
 
@@ -64,6 +72,7 @@ class RelationExtractor(Model):
         type_to_clusters_map: Dict[str, List[int]],
         n_true_clusters: int,
         relation_to_clusters_map: Dict[int, List[int]] = None,
+        cluster_to_size_map: Dict[str, int] = None
     ):
         bias_vectors_clusters = {x: i + n_true_clusters for i, x in enumerate(used_entities)}
         candidate_relations = []
@@ -84,6 +93,10 @@ class RelationExtractor(Model):
             type_lists = [type_to_clusters_map[x] if x in e else [bias_vectors_clusters[x]] for x in used_entities]
             for clist in product(*type_lists):
                 common_relations = set.intersection(*[cluster_to_relations_map[c] for c in clist])
+                if self.ignore_empty_clusters and cluster_to_relations_map is not None :
+                    if any(cluster_to_size_map[c] == 0 for c in clist if c < len(cluster_to_size_map)):
+                        continue
+
                 candidate_relations.append(clist)
                 candidate_relations_labels.append(1 if len(common_relations) > 0 else 0)
                 candidate_relations_types.append(self._relation_type_map[tuple(e)])
@@ -102,16 +115,28 @@ class RelationExtractor(Model):
     ) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
 
-        cluster_type_embeddings = self.map_cluster_to_type_embeddings(type_to_cluster_ids)  # (1, C, E)
-        cluster_span_embeddings = util.masked_mean(
-            span_embeddings.unsqueeze(2), coref_labels.unsqueeze(-1), dim=1
-        )  # (P, C, E)
+        if coref_labels.sum() == 0:
+            return {"loss": 0.0, "metadata" : metadata}
+
+        cluster_to_size_map = coref_labels.sum(0).sum(0).cpu().data.numpy()
+        try :
+            cluster_type_embeddings = self.map_cluster_to_type_embeddings(type_to_cluster_ids)  # (1, C, E)
+        except :
+            breakpoint()
+
+        sum_embeddings = (span_embeddings.unsqueeze(2) * coref_labels.float().unsqueeze(-1)).sum(1)
+        length_embeddings =  (coref_labels.unsqueeze(-1).sum(1) + 1e-5)
+
+        cluster_span_embeddings = sum_embeddings / length_embeddings
 
         paragraph_cluster_mask = (coref_labels.sum(1) > 0).float().unsqueeze(-1)  # (P, C, 1)
 
-        paragraph_cluster_embeddings = cluster_span_embeddings * paragraph_cluster_mask + cluster_type_embeddings * (
-            1 - paragraph_cluster_mask
-        ) # (P, C, E)
+        try :
+            paragraph_cluster_embeddings = cluster_span_embeddings * paragraph_cluster_mask + cluster_type_embeddings * (
+                1 - paragraph_cluster_mask
+            ) # (P, C, E)
+        except :
+            breakpoint()
 
         assert (
             paragraph_cluster_embeddings.shape[1] == coref_labels.shape[2]
@@ -128,6 +153,7 @@ class RelationExtractor(Model):
             type_to_clusters_map=type_to_cluster_ids,
             relation_to_clusters_map=relation_to_cluster_ids,
             n_true_clusters=n_true_clusters,
+            cluster_to_size_map=cluster_to_size_map
         )
 
         candidate_relations_tensor = torch.LongTensor(candidate_relations).to(span_embeddings.device)  # (R, 4)
@@ -136,7 +162,7 @@ class RelationExtractor(Model):
         )  # (R, )
 
         if len(candidate_relations) == 0:
-            return {"loss": 0.0}
+            return {"loss": 0.0, "metadata" : metadata}
 
         all_relation_embeddings = util.batched_index_select(
             paragraph_cluster_embeddings,
@@ -146,6 +172,7 @@ class RelationExtractor(Model):
         relation_scores, relation_logits = self.get_relation_scores(all_relation_embeddings)  # (1, R')
         output_dict = {}
         output_dict["relations_candidates_list"] = candidate_relations
+        output_dict["cluster_to_size_map"] = cluster_to_size_map
         output_dict["relation_labels"] = candidate_relations_labels
         output_dict["relation_types"] = candidate_relations_types
         output_dict["doc_id"] = metadata[0]["doc_key"]
@@ -173,14 +200,14 @@ class RelationExtractor(Model):
         output_dict["loss"] = 0.0
 
         if relation_labels is not None:
-            assert (relation_scores <= 1.0).all() & (relation_scores >= 0.0).all()
-            assert (relation_labels <= 1.0).all() & (relation_labels >= 0.0).all()
+            assert (relation_scores <= 1.0).all() & (relation_scores >= 0.0).all(), breakpoint()
+            assert (relation_labels <= 1.0).all() & (relation_labels >= 0.0).all(), breakpoint()
 
             output_dict["loss"] = F.binary_cross_entropy_with_logits(
                 relation_logits,
                 relation_labels.float(),
                 reduction="mean",
-                pos_weight=torch.Tensor([0.71]).to(relation_logits.device),
+                pos_weight=torch.Tensor([self._pos_weight]).to(relation_logits.device)
             )
 
             self._global_scores(
@@ -195,9 +222,11 @@ class RelationExtractor(Model):
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]):
         new_output_dict = {
+            "linked_clusters" : [i for i, x in enumerate(output_dict.get("cluster_to_size_map", [])) if x > 0],
             "candidates": output_dict.get("relations_candidates_list", []),
             "gold": output_dict.get("relations_true_list", []),
             "scores": output_dict.get("relation_scores", np.array([])),
+            "metadata" : output_dict['metadata']
         }
 
         if len(new_output_dict["scores"]) > 0:

@@ -26,6 +26,7 @@ local params = {
   bert_fine_tune: std.extVar("BERT_FINE_TUNE"),
   set_to_eval: false, #stringToBool(std.extVar('SET_TO_EVAL')),
   document_filter: std.extVar('DOCUMENT_FILTER'),
+  filter_to_salient: stringToBool(std.extVar('FTS')),
   // Specifies the model parameters.
   lstm_hidden_size: 200,
   lstm_n_layers: 1,
@@ -39,19 +40,23 @@ local params = {
     relation: 0.0,
     coref: 0.0,
     linked: std.extVar('lw'),
-    n_ary_relation: std.extVar('rw')
+    n_ary_relation: std.extVar('rw'),
+    cluster_saliency: std.extVar('cw')
   },
 
   label_namespace: "ner_entity_labels",
   relation_cardinality: std.parseInt(std.extVar('relation_cardinality')),
 
   // Model training
-  batch_size: 60,
-  num_epochs: 100,
+  batch_size: 50,
+  num_epochs: 30,
   shuffle_instances: false,
   optimizer: {
     type: "adam",
-    lr: 1e-3
+    lr: 1e-3,
+    parameter_groups :[
+      [[".*bert_model.*"], {"lr": 2e-5}], 
+    ]
   },
   learning_rate_scheduler:  {
     type: "reduce_on_plateau",

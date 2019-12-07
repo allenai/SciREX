@@ -4,7 +4,65 @@ from typing import Callable, Dict, List, Tuple
 
 import numpy as np
 
-from dygie.data.dataset_readers.read_pwc_dataset import is_x_in_y
+is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
+
+
+def break_and_collapse_sections(sentences: List[List[Tuple[int, int]]], min_len=100, max_len=400):
+    new_sentences = []
+
+    current_section = []
+    current_length = 0
+    for section in sentences :
+        section_length = section[-1][1] - section[0][0]
+
+        if current_length > max_len :
+            new_sentences.append(current_section)
+            current_section = []
+            current_length = 0
+
+        if section_length < min_len :
+            current_section += section
+            current_length += section_length
+
+        else :
+            new_sentences.append(current_section + section)
+            current_section = []
+            current_length = 0
+
+    if len(current_section) > 0:
+        new_sentences.append(current_section)
+
+    assert [s for sec in new_sentences for s in sec] == [s for sec in sentences for s in sec], breakpoint()
+
+    broken_sections = []
+    for section in new_sentences :
+        section_length = section[-1][1] - section[0][0]
+        if section_length < max_len :
+            broken_sections.append(section)
+        else :
+            current_section = []
+            current_length = 0
+            for sentence in section :
+                sentence_length = sentence[1] - sentence[0]
+                if current_length + sentence_length > max_len :
+                    if len(current_section) > 0:
+                        broken_sections.append(current_section)
+                    current_section = [sentence]
+                    current_length = sentence_length
+                else :
+                    current_section.append(sentence)
+                    current_length += sentence_length
+
+            if len(current_section) > 0:
+                broken_sections.append(current_section)
+
+    assert broken_sections[0][0] == sentences[0][0]
+    assert broken_sections[-1][-1] == sentences[-1][-1]
+
+    try :
+        return [(x[0][0], x[-1][-1]) for x in broken_sections]
+    except :
+        breakpoint()
 
 
 def collapse_paragraphs(plist, min_len=100, max_len=400):
@@ -148,7 +206,7 @@ def filter_sentences(
                 new_sent_start = len(new_words)
                 diff = new_sent_start - old_sent_start
                 sent_words = words[sent[0] : sent[1]]
-                
+
                 new_sent_entities = [(diff + e[0], diff + e[1]) for e in old_sent_entities]
 
                 new_words += sent_words
@@ -176,16 +234,21 @@ def filter_json_dict(json_dict, keep_sentence: List[List[bool]]):
     new_json_dict = deepcopy(json_dict)
     new_json_dict["words"] = new_words
     new_json_dict["sections"] = new_sections
-    new_json_dict['sentences'] = new_sentences
-    new_json_dict["ner"] = {map_old_spans_to_new[k]: v for k, v in json_dict["ner"].items() if k in map_old_spans_to_new}
+    new_json_dict["sentences"] = new_sentences
+    new_json_dict["ner"] = {
+        map_old_spans_to_new[k]: v for k, v in json_dict["ner"].items() if k in map_old_spans_to_new
+    }
     new_json_dict["coref"] = {
         k: [map_old_spans_to_new[tuple(x)] for x in v if tuple(x) in map_old_spans_to_new]
         for k, v in new_json_dict["coref"].items()
     }
 
-    map_new_span_to_old = {v:k for k, v in map_old_spans_to_new.items()}
-    for k in new_json_dict['ner'] :
-        assert new_json_dict['words'][k[0]:k[1]] == json_dict['words'][map_new_span_to_old[k][0]:map_new_span_to_old[k][1]]
+    map_new_span_to_old = {v: k for k, v in map_old_spans_to_new.items()}
+    for k in new_json_dict["ner"]:
+        assert (
+            new_json_dict["words"][k[0] : k[1]]
+            == json_dict["words"][map_new_span_to_old[k][0] : map_new_span_to_old[k][1]]
+        )
 
     return new_json_dict
 
@@ -213,11 +276,11 @@ def filter_to_doctaet(json_dict):
     section_features = get_features_for_sections(sections, words)
 
     keep_sentence = []
-    for sents, sec_fs in zip(sentences, section_features) :
-        if 'Heading' in sec_fs or 'Abstract' in sec_fs :
-            # Check if section is Abstract or Heading 
+    for sents, sec_fs in zip(sentences, section_features):
+        if "Heading" in sec_fs or "Abstract" in sec_fs:
+            # Check if section is Abstract or Heading
             ks = [True for _ in range(len(sents))]
-        else :
+        else:
             features = get_features_for_sections(sents, words)
             # Check if sentence include any IBM labels
             ks = [len(fs) > 0 for fs in features]

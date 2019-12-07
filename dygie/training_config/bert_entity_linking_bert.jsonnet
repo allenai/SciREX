@@ -19,10 +19,10 @@
   validation_data_path: std.extVar("DEV_PATH"),
   test_data_path: std.extVar("TEST_PATH"),
   "model": {
-    "type": "bert_for_entity_linking",
+    "type": "bert_coreference",
     "bert_model": {
         "pretrained_model": std.extVar("BERT_WEIGHTS"),
-        "requires_grad" : "10,11"
+        "requires_grad" : "pooler,10,11"
     },
     "aggregate_feedforward": {
       "input_dim": 768,
@@ -48,7 +48,7 @@
     "num_serialized_models_to_keep": 1,
     "patience": 10,
     "cuda_device": std.parseInt(std.extVar("CUDA_DEVICE")),
-    "grad_norm": 10.0,
+    "grad_norm": 5.0,
     "validation_metric": "+f1",
     "optimizer": {
       "type": "adam",

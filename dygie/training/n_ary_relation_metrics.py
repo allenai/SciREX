@@ -61,7 +61,10 @@ class NAryRelationMetrics(Metric):
             prediction_scores.append(self._candidate_scores[k])
             gold.append(self._candidate_labels[k])
 
-        threshold = compute_threshold(prediction_scores, gold)
+        try :
+            threshold = compute_threshold(prediction_scores, gold)
+        except :
+            breakpoint()
         prediction = [
             1 if self._candidate_scores[k] > threshold else 0
             for k in self._candidate_labels

@@ -6,7 +6,7 @@ from allennlp.models.model import Model
 from allennlp.nn import RegularizerApplicator
 from allennlp.modules import FeedForward
 from allennlp.nn.initializers import InitializerApplicator
-from allennlp.modules.token_embedders.bert_token_embedder import PretrainedBertEmbedder
+from dygie.models.bert_token_embedder_modified import PretrainedBertEmbedder
 
 from dygie.training.thresholding_f1_metric import BinaryThresholdF1
 

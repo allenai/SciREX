@@ -18,6 +18,7 @@ from dygie.models.coreference.coref_gold_spans import CorefResolverCRF
 from dygie.models.relations.n_ary_relation import RelationExtractor as NAryRelationExtractor
 from dygie.models.ner.ner_crf_tagger import NERTagger
 from dygie.models.span_classifiers.span_classifier_binary import SpanClassifier
+from dygie.models.relations.cluster_classifier import ClusterClassifier as ClusterClassifier
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -51,16 +52,25 @@ class DyGIECRF(Model):
             vocab=vocab, params=modules.pop("n_ary_relation")
         )
 
+        self._train_cluster_classifier = False
+        if "cluster_classifier" in modules:
+            self._train_cluster_classifier = True
+            self._cluster_classifier = ClusterClassifier.from_params(
+                vocab=vocab, params=modules.pop("cluster_classifier")
+            )
+
         self._endpoint_span_extractor = EndpointSpanExtractor(context_layer.get_output_dim(), combination="x,y")
         self._attentive_span_extractor = SelfAttentiveSpanExtractor(input_dim=context_layer.get_output_dim())
 
-        for k in loss_weights :
+        for k in loss_weights:
             loss_weights[k] = float(loss_weights[k])
         self._loss_weights = loss_weights
         self._permanent_loss_weights = copy.deepcopy(self._loss_weights)
 
         self._display_metrics = display_metrics
-        self._multi_task_loss_metrics = {k: Average() for k in ["ner", "linked", "n_ary_relation", "coref"]}
+        self._multi_task_loss_metrics = {
+            k: Average() for k in ["ner", "linked", "n_ary_relation", "coref", "cluster_saliency"]
+        }
 
         self.training_mode = True
         self.prediction_mode = False
@@ -81,37 +91,44 @@ class DyGIECRF(Model):
         relation_to_cluster_ids=None,
         metadata=None,
     ):
+        torch.cuda.empty_cache()
+        print(metadata[0]['doc_key'], text['bert'].shape)
+
+        output_dict = {}
+        loss = 0.0
 
         output_embedding = self.embedding_forward(text)
-        output_ner = self.ner_forward(output_embedding, ner_entity_labels, metadata)
-        output_span_embeddings = self.span_embeddings_forward(
+
+        if self._loss_weights["ner"] > 0.0:
+            output_dict["ner"] = self.ner_forward(output_embedding, ner_entity_labels, metadata)
+            loss += self._loss_weights["ner"] * output_dict["ner"]["loss"]
+
+        output_span_embedding = self.span_embeddings_forward(
             output_embedding, spans, span_entity_labels, span_features, metadata
         )
 
-        output_coref = self.coref_forward(output_span_embeddings, metadata)
+        if self._loss_weights["coref"] > 0.0:
+            output_dict["coref"] = self.coref_forward(output_span_embedding, metadata)
+            loss += self._loss_weights["coref"] * output_dict["coref"]["loss"]
 
-        output_linker, output_n_ary_relation = self.link_and_relation_forward(
-            output_span_embeddings, metadata, span_link_labels, relation_to_cluster_ids, span_coref_labels
-        )
+        if "cluster_saliency" in self._loss_weights and self._loss_weights["cluster_saliency"] > 0.0:
+            output_dict["cluster_saliency"] = self.cluster_saliency_forward(
+                output_span_embedding, metadata, span_coref_labels
+            )
+            loss += self._loss_weights["cluster_saliency"] * output_dict["cluster_saliency"]["loss"]
 
-        loss = (
-            self._loss_weights["ner"] * output_ner["loss"]
-            + self._loss_weights["linked"] * output_linker["loss"]
-            + self._loss_weights["n_ary_relation"] * output_n_ary_relation["loss"]
-            + self._loss_weights["coref"] * output_coref["loss"]
-        )
-
-        output_dict = dict(
-            ner=output_ner,
-            linked=output_linker,
-            n_ary_relation=output_n_ary_relation,
-            coref=output_coref,
-        )
+        if self._loss_weights["linked"] > 0.0 or self._loss_weights["n_ary_relation"] > 0.0:
+            output_dict["linked"], output_dict["n_ary_relation"] = self.link_and_relation_forward(
+                output_span_embedding, metadata, span_link_labels, relation_to_cluster_ids, span_coref_labels
+            )
+            loss += self._loss_weights["linked"] * output_dict["linked"]["loss"]
+            loss += self._loss_weights["n_ary_relation"] * output_dict["n_ary_relation"]["loss"]
 
         output_dict["loss"] = loss
         for k in self._multi_task_loss_metrics:
-            l = output_dict[k]["loss"]
-            self._multi_task_loss_metrics[k](l)
+            if k in output_dict:
+                l = output_dict[k]["loss"]
+                self._multi_task_loss_metrics[k](l)
 
         return output_dict
 
@@ -143,8 +160,6 @@ class DyGIECRF(Model):
         contextualized_embeddings = flat_contextualized_embeddings.reshape(
             (text_embeddings.size(0), text_embeddings.size(1), flat_contextualized_embeddings.size(-1))
         )
-
-        # contextualized_embeddings = self._context_layer(text_embeddings, text_mask)
 
         output_embedding = {
             "contextualised": contextualized_embeddings,
@@ -196,8 +211,98 @@ class DyGIECRF(Model):
 
         return output_coref
 
+    def link_forward(self, output_span_embedding, metadata, span_link_labels, span_coref_labels, link_threshold=None):
+        output_linker = {"loss": 0.0}
+        if output_span_embedding["valid"]:
+            spans, featured_span_embeddings, span_ix, span_mask = (
+                output_span_embedding["spans"],
+                output_span_embedding["featured_span_embeddings"],
+                output_span_embedding["span_ix"],
+                output_span_embedding["span_mask"],
+            )
+
+            output_linker = self._link_classifier(
+                spans=spans,
+                span_embeddings=featured_span_embeddings,
+                span_features=output_span_embedding["span_features"],
+                span_labels=span_link_labels,
+                metadata=metadata,
+            )
+
+            if link_threshold is not None:
+                # Keep only clusters with linked entities
+                ner_probs = output_linker["ner_probs"].squeeze(0)
+                ner_probs = (ner_probs > link_threshold).long()
+
+                clusters_to_keep = (span_coref_labels * ner_probs[:, :, None]).sum(0).sum(0)
+                output_linker["clusters_to_keep"] = clusters_to_keep.cpu().data.numpy()
+
+        return output_linker
+
+    def cluster_saliency_forward(self, output_span_embedding, metadata, span_coref_labels):
+        output_cluster_saliency = {"loss": 0.0}
+        if output_span_embedding["valid"]:
+            spans, featured_span_embeddings, span_ix, span_mask = (
+                output_span_embedding["spans"],
+                output_span_embedding["featured_span_embeddings"],
+                output_span_embedding["span_ix"],
+                output_span_embedding["span_mask"],
+            )
+
+            if span_coref_labels is not None or self.prediction_mode:
+                cluster_labels = metadata[0]["document_metadata"]["cluster_labels"]
+
+                output_cluster_saliency = self._cluster_classifier.compute_representations(
+                    spans=spans,
+                    span_mask=span_mask,
+                    span_embeddings=featured_span_embeddings,
+                    coref_labels=span_coref_labels,
+                    cluster_labels=torch.Tensor(cluster_labels).to(span_coref_labels.device),
+                    metadata=metadata,
+                )
+
+        return output_cluster_saliency
+
+    def relation_forward(self, output_span_embedding, metadata, relation_to_cluster_ids, span_coref_labels):
+        output_n_ary_relation = {"loss": 0.0}
+
+        if output_span_embedding["valid"]:
+            spans, featured_span_embeddings, span_ix, span_mask = (
+                output_span_embedding["spans"],
+                output_span_embedding["featured_span_embeddings"],
+                output_span_embedding["span_ix"],
+                output_span_embedding["span_mask"],
+            )
+
+
+            if relation_to_cluster_ids is not None or self.prediction_mode:
+                n_salient_clusters = len(metadata[0]["document_metadata"]["cluster_name_to_id"])
+                type_to_cluster_ids = metadata[0]["document_metadata"]["type_to_cluster_ids"]
+                relation_to_cluster_ids = metadata[0]["document_metadata"]["relation_to_cluster_ids"]
+                span_coref_labels = span_coref_labels[:, :, :n_salient_clusters]
+
+                self._cluster_n_ary_relation.ignore_empty_clusters = True
+
+                output_n_ary_relation = self._cluster_n_ary_relation.compute_representations(
+                    spans=spans,
+                    span_mask=span_mask,
+                    span_embeddings=featured_span_embeddings,
+                    coref_labels=span_coref_labels,
+                    type_to_cluster_ids=type_to_cluster_ids,
+                    relation_to_cluster_ids=relation_to_cluster_ids,
+                    metadata=metadata,
+                )
+
+        return output_n_ary_relation
+
     def link_and_relation_forward(
-        self, output_span_embedding, metadata, span_link_labels, relation_to_cluster_ids, span_coref_labels, link_threshold=None
+        self,
+        output_span_embedding,
+        metadata,
+        span_link_labels,
+        relation_to_cluster_ids,
+        span_coref_labels,
+        link_threshold=None,
     ):
         output_linker = {"loss": 0.0}
         output_n_ary_relation = {"loss": 0.0}
@@ -212,10 +317,10 @@ class DyGIECRF(Model):
             # Linking
 
             output_linker = self._link_classifier(
-                spans=self._flatten_span_info(spans, span_ix),
-                span_embeddings=self._flatten_span_info(featured_span_embeddings, span_ix),
-                span_features=self._flatten_span_info(output_span_embedding["span_features"], span_ix),
-                span_labels=self._flatten_span_info(span_link_labels.unsqueeze(-1), span_ix).squeeze(-1),
+                spans=spans,
+                span_embeddings=featured_span_embeddings,
+                span_features=output_span_embedding["span_features"],
+                span_labels=span_link_labels,
                 metadata=metadata,
             )
 
@@ -224,8 +329,9 @@ class DyGIECRF(Model):
                 ner_probs = output_linker["ner_probs"].squeeze(0)
                 ner_probs = (ner_probs > link_threshold).long()
 
-                clusters_to_keep = (span_coref_labels.squeeze(0) * ner_probs[:, None]).sum(0) == 0
+                clusters_to_keep = (span_coref_labels * ner_probs[:, :, None]).sum(0).sum(0) == 0
                 span_coref_labels[:, :, clusters_to_keep] = 0
+                self._cluster_n_ary_relation.ignore_empty_clusters = True
 
             if relation_to_cluster_ids is not None or self.prediction_mode:
                 type_to_cluster_ids = metadata[0]["document_metadata"]["type_to_cluster_ids"]
@@ -300,6 +406,30 @@ class DyGIECRF(Model):
 
         return res
 
+    def decode_links(self, batch, link_threshold):
+        output_embedding = self.embedding_forward(text=batch["text"])
+        output_span_embedding = self.span_embeddings_forward(
+            output_embedding=output_embedding,
+            spans=batch["spans"],
+            span_entity_labels=batch["span_entity_labels"],
+            span_features=batch["span_features"],
+            metadata=batch["metadata"],
+        )
+
+        output_linker = self.link_forward(
+            output_span_embedding=output_span_embedding,
+            metadata=batch["metadata"],
+            span_link_labels=batch["span_link_labels"],
+            span_coref_labels=batch["span_coref_labels"],
+            link_threshold=link_threshold,
+        )
+
+        res = {}
+        res["linked"] = self._link_classifier.decode(output_linker)
+        res["clusters_size"] = output_linker["clusters_to_keep"]
+
+        return res
+
     def decode_relations(self, batch, link_threshold):
         output_embedding = self.embedding_forward(text=batch["text"])
         output_span_embedding = self.span_embeddings_forward(
@@ -310,19 +440,38 @@ class DyGIECRF(Model):
             metadata=batch["metadata"],
         )
 
-        
-        output_linker, output_n_ary_relation = self.link_and_relation_forward(
+        self._cluster_n_ary_relation.ignore_empty_clusters = True
+
+        output_n_ary_relation = self.relation_forward(
             output_span_embedding=output_span_embedding,
             metadata=batch["metadata"],
-            span_link_labels=batch["span_link_labels"],
             relation_to_cluster_ids=batch.get("relation_to_cluster_ids", None),
             span_coref_labels=batch["span_coref_labels"],
-            link_threshold=link_threshold,
         )
 
         res = {}
-        res["linked"] = self._link_classifier.decode(output_linker)
         res["n_ary_relation"] = self._cluster_n_ary_relation.decode(output_n_ary_relation)
+
+        return res
+
+    def decode_linked_clusters(self, batch):
+        output_embedding = self.embedding_forward(text=batch["text"])
+        output_span_embedding = self.span_embeddings_forward(
+            output_embedding=output_embedding,
+            spans=batch["spans"],
+            span_entity_labels=batch["span_entity_labels"],
+            span_features=batch["span_features"],
+            metadata=batch["metadata"],
+        )
+
+        output_cluster_saliency = self.cluster_saliency_forward(
+            output_span_embedding=output_span_embedding,
+            metadata=batch["metadata"],
+            span_coref_labels=batch["span_coref_labels"],
+        )
+
+        res = {}
+        res['cluster_saliency'] = self._cluster_classifier.decode(output_cluster_saliency)
 
         return res
 
@@ -338,6 +487,11 @@ class DyGIECRF(Model):
         metrics_loss = {"loss_" + k: v.get_metric(reset) for k, v in self._multi_task_loss_metrics.items()}
         metrics_loss = {k: (v.item() if hasattr(v, "item") else v) for k, v in metrics_loss.items()}
 
+        if self._train_cluster_classifier:
+            metrics_cluster_saliency = self._cluster_classifier.get_metrics(reset=reset)
+        else:
+            metrics_cluster_saliency = {}
+
         # Make sure that there aren't any conflicting names.
         metric_names = (
             list(metrics_ner.keys())
@@ -345,6 +499,7 @@ class DyGIECRF(Model):
             + list(metrics_n_ary.keys())
             + list(metrics_loss.keys())
             + list(metrics_coref.keys())
+            + list(metrics_cluster_saliency.keys())
         )
         assert len(set(metric_names)) == len(metric_names)
         all_metrics = dict(
@@ -353,15 +508,22 @@ class DyGIECRF(Model):
             + list(metrics_n_ary.items())
             + list(metrics_loss.items())
             + list(metrics_coref.items())
+            + list(metrics_cluster_saliency.items())
         )
 
         all_metrics["validation_metric"] = (
             self._loss_weights["ner"] * nan_to_zero(metrics_ner.get("ner_1_f1-measure", 0))
-            + self._loss_weights["linked"] * nan_to_zero(metrics_link.get('span_f1', 0))
-            + self._loss_weights["n_ary_relation"] * nan_to_zero(metrics_n_ary.get('n_ary_rel_global_macro-avg.f1-score', 0))
+            + self._loss_weights["linked"] * nan_to_zero(metrics_link.get("span_f1", 0))
+            + self._loss_weights["n_ary_relation"]
+            * nan_to_zero(metrics_n_ary.get("n_ary_rel_global_macro-avg.f1-score", 0))
         )
 
-        self._display_metrics.append('validation_metric')
+        if self._train_cluster_classifier:
+            all_metrics["validation_metric"] += self._loss_weights["cluster_saliency"] * nan_to_zero(
+                metrics_cluster_saliency.get("cluster_1.0.f1-score", 0)
+            )
+
+        self._display_metrics.append("validation_metric")
         # If no list of desired metrics given, display them all.
         if self._display_metrics is None:
             return all_metrics
@@ -375,8 +537,9 @@ class DyGIECRF(Model):
                 res[new_k] = v
         return res
 
-def nan_to_zero(n) :
-    if n != n :
+
+def nan_to_zero(n):
+    if n != n:
         return 0
 
     return n

@@ -66,11 +66,14 @@ class PwCLinkerReader(DatasetReader):
     @staticmethod
     def generate_pairs(file_path):
         pairs = []
-        with open(file_path, "r") as snli_file:
+        with open(file_path, "r") as data_file:
             logger.info("Reading Coref instances from jsonl dataset at: %s", file_path)
-            for line in snli_file:
+
+            for i, line in enumerate(data_file):
                 ins = json.loads(line)
-                entities = [(x[0], x[1], x[2].split("_")) for x in ins["ner"]]
+                # if i > 5 :
+                #     break
+                entities = [tuple(x) for x in ins["ner"]]
                 coref = {}
                 for k, vlist in ins["coref"].items():
                     for v in vlist:
@@ -83,7 +86,7 @@ class PwCLinkerReader(DatasetReader):
                     if e1 == e2: 
                         continue
                     c1, c2 = coref.get((e1[0], e1[1]), set()), coref.get((e2[0], e2[1]), set())
-                    t1, t2 = e1[2][0], e2[2][0]
+                    t1, t2 = e1[2], e2[2]
 
                     if t1 != t2:
                         continue
@@ -98,10 +101,11 @@ class PwCLinkerReader(DatasetReader):
                     if gold_label == "-":
                         continue
 
-                    char_sim_features = character_similarity_features(w1, w2, max_ng=3)
+                    # char_sim_features = character_similarity_features(w1, w2, max_ng=3)
                     features = np.array(
-                        [(e1[1] - e2[0]) / len(ins["words"]), (e1[1] - e1[0]) / 10, (e2[1] - e2[0]) / 10] + char_sim_features
+                        [(e1[1] - e2[0]) / len(ins["words"]), (e1[1] - e1[0]) / 10, (e2[1] - e2[0]) / 10] #+ char_sim_features
                     )
+                    
                     pairs.append((w1, w2, gold_label, t1, t2, features))
         return pairs
 

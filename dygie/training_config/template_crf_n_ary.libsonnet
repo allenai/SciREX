@@ -122,7 +122,8 @@ function(p) {
   dataset_reader: {
     type: p.dataset_reader,
     token_indexers: token_indexers,
-    document_filter_type: p.document_filter
+    document_filter_type: p.document_filter,
+    filter_to_salient: p.filter_to_salient,
   },
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
@@ -158,9 +159,13 @@ function(p) {
         n_features: n_features
       },
       n_ary_relation: {
-        antecedent_feedforward: make_feedforward(p.relation_cardinality*featured_emb_dim),
+        antecedent_feedforward: make_feedforward(4*featured_emb_dim),
         initializer: module_initializer,
 	      relation_cardinality: p.relation_cardinality
+      },
+      cluster_classifier: {
+        antecedent_feedforward: make_feedforward(featured_emb_dim),
+        initializer: module_initializer,
       },
     }
   },
@@ -175,7 +180,7 @@ function(p) {
   trainer: {
     num_epochs: p.num_epochs,
     grad_norm: 5.0,
-    patience : 10,
+    patience : 7,
     cuda_device : std.parseInt(std.extVar("CUDA_DEVICE")),
     validation_metric: '+validation_metric',
     learning_rate_scheduler: p.learning_rate_scheduler,

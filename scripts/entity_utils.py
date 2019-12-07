@@ -47,3 +47,40 @@ def chunk_string(name) :
         assert c == name[s:e], (c, name[s:e])
         
     return list(zip(stripped_idx, stripped_chunks))
+
+import re
+clean_name = lambda x : re.sub(r"[^\w-]", "_", x)
+
+def _annotation_to_dict(dc):
+    # convenience method
+    if isinstance(dc, dict):
+        ret = dict()
+        for k, v in dc.items():
+            k = _annotation_to_dict(k)
+            v = _annotation_to_dict(v)
+            ret[k] = v
+        return ret
+    elif isinstance(dc, str):
+        return dc
+    elif isinstance(dc, (set, frozenset, list, tuple)):
+        ret = []
+        for x in dc:
+            ret.append(_annotation_to_dict(x))
+        return tuple(ret)
+    else:
+        return dc
+
+import json
+def annotations_to_jsonl(annotations, output_file):
+    with open(output_file, "w") as of:
+        for ann in sorted(annotations, key=lambda x: x["doc_id"]):
+            as_json = _annotation_to_dict(ann)
+            as_str = json.dumps(as_json, sort_keys=True)
+            of.write(as_str)
+            of.write("\n")
+
+def load_jsonl(filename) :
+    with open(filename) as f :
+        data = [json.loads(line) for line in f] 
+
+    return data

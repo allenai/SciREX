@@ -4,6 +4,8 @@ import logging
 import numpy as np
 from overrides import overrides
 
+from tqdm import tqdm
+
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import Field, TextField, LabelField, MetadataField, ArrayField
@@ -57,7 +59,7 @@ class PwCLinkerAllPairsReader(DatasetReader):
         pairs = []
         with open(file_path, "r") as snli_file:
             logger.info("Reading Coref instances from jsonl dataset at: %s", file_path)
-            for line in snli_file:
+            for line in tqdm(snli_file):
                 ins = json.loads(line)
                 for field in ["prediction", "gold"]:
                     entities = [
@@ -77,11 +79,13 @@ class PwCLinkerAllPairsReader(DatasetReader):
                                 "doc_id": ins["doc_id"],
                                 "field": field,
                             }
-                            char_sim_features = character_similarity_features(w1, w2, max_ng=3)
+                            # char_sim_features = character_similarity_features(w1, w2, max_ng=3)
                             features = np.array(
-                                [(e1[1] - e2[0]) / len(ins["words"]), (e1[1] - e1[0]) / 10, (e2[1] - e2[0]) / 10] + char_sim_features
+                                [(e1[1] - e2[0]) / len(ins["words"]), (e1[1] - e1[0]) / 10, (e2[1] - e2[0]) / 10] #+ char_sim_features
                             )
                             pairs.append((w1, w2, t1, t2, features, gold_label, metadata))
+
+        print(len(pairs))
 
         return pairs
 

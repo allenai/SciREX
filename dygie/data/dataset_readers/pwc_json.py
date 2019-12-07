@@ -8,44 +8,113 @@ from collections import OrderedDict
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.dataset_readers.dataset_utils import enumerate_spans
-from allennlp.data.fields import ListField, MetadataField, MultiLabelField, SequenceLabelField, SpanField, TextField
+from allennlp.data.fields import ListField, MetadataField, MultiLabelField, SequenceLabelField, SpanField, TextField, LabelField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import TokenIndexer
 from allennlp.data.tokenizers import Token
 from overrides import overrides
 
 from dygie.data.dataset_readers.paragraph_utils import *
-from dygie.data.dataset_readers.read_pwc_dataset import Relation, is_x_in_y, used_entities
+# from dygie.data.dataset_readers.read_pwc_dataset import Relation, is_x_in_y, used_entities
+from scripts.entity_utils import *
 from dygie.data.dataset_readers.span_utils import *
 
 map_label = lambda x, n: "_".join([x[i] for i in n]) if x != "" else ""
+is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+does_overlap = lambda x, y: max(x[0], y[0]) < min(x[1], y[1])
 
 
 def clean_json_dict(json_dict):
     # Get fields from JSON dict
     entities: List[Tuple[int, int, str]] = json_dict["ner"]
-    corefs_all: Dict[str, List[Tuple[int, int]]] = json_dict["coref"]
-    n_ary_relations_all: List[Relation] = [Relation(*x)._asdict() for x in json_dict["n_ary_relations"]]
-
     # Convert Entities to dictionary  and split type into tuple ("Entity", Entity Type, Is Linkable)
     entities = sorted(entities, key=lambda x: (x[0], x[1]))
     entities: Dict[Tuple[int, int], str] = OrderedDict([((s, e), t) for s, e, t in entities])
-    for e in entities:
-        entities[e] = tuple(["Entity"] + entities[e].split("_"))
+
+    corefs_all: Dict[str, List[Tuple[int, int]]] = json_dict["coref"]
+    n_ary_relations_all: List[Dict[str, str]] = [x for x in json_dict["n_ary_relations"]]
+
+    cluster_to_type = {}
+    for rel in n_ary_relations_all:
+        for k, v in rel.items():
+            cluster_to_type[v] = k
+
+    if "method_subrelations" in json_dict:
+        method_subrelations: Dict[str, List[tuple]] = {
+            x: [y[1] for y in v if y[1] != x] for x, v in json_dict["method_subrelations"].items()
+        }
+
+        for method, method_sub in method_subrelations.items():
+            for m in method_sub:
+                cluster_to_type[m] = "Method"
+
+        for method_name, method_subparts in method_subrelations.items():
+            for part in method_subparts:
+                corefs_all[method_name].extend(corefs_all[part])
+
+        for method_subparts in method_subrelations.values():
+            for part in method_subparts:
+                if part in corefs_all:
+                    del corefs_all[part]
+
+    for cluster, spans in corefs_all.items():
+        corefs_all[cluster] = sorted(list(set([tuple(x) for x in spans])))
 
     # Remove clusters with no entries
-    corefs = {k: [tuple(x) for x in v] for k, v in corefs_all.items() if len(v) > 0}
+    corefs = {k: v for k, v in corefs_all.items() if len(v) > 0}
+
+    for cluster, spans in corefs.items():
+        for span in spans:
+            assert span in entities, breakpoint()
+            if cluster not in cluster_to_type:
+                continue
+            entities[span] = cluster_to_type[cluster]
+
+    for e in entities:
+        entities[e] = tuple(["Entity", entities[e]] + [str(any(e in v for v in corefs.values()))])
 
     # Keep only relations where all clusters are non empty
-    n_ary_relations = [r for r in n_ary_relations_all if all([v in corefs for k, v in r.items() if k in used_entities])]
+    n_ary_relations = [r for r in n_ary_relations_all]# if all([v in corefs for k, v in r.items() if k in used_entities])]
 
     json_dict["coref"] = corefs
     json_dict["n_ary_relations"] = n_ary_relations
     json_dict["ner"] = entities
+    if 'coref_non_salient' in json_dict :
+        for cluster, spans in json_dict['coref_non_salient'].items():
+            json_dict['coref_non_salient'][cluster] = sorted(list(set([tuple(x) for x in spans])))
+
+    for e in entities:
+        in_sentences = [i for i, s in enumerate(json_dict["sentences"]) if is_x_in_y(e, s)]
+        if len(in_sentences) > 1:
+            breakpoint()
+        if len(in_sentences) == 0:
+            in_sentences = [i for i, s in enumerate(json_dict["sentences"]) if does_overlap(e, s)]
+            assert sorted(in_sentences) == list(range(min(in_sentences), max(in_sentences) + 1)), breakpoint()
+            # breakpoint()
+            in_sentences = sorted(in_sentences)
+            json_dict["sentences"][in_sentences[0]][1] = json_dict["sentences"][in_sentences[-1]][1]
+            json_dict["sentences"] = [s for i, s in enumerate(json_dict["sentences"]) if i not in in_sentences[1:]]
+
+    json_dict["sentences"] = group_sentences_to_sections(json_dict["sentences"], json_dict["sections"])
 
     return json_dict
+
+
+def group_sentences_to_sections(sentences, sections):
+    grouped_sentences = [[] for _ in range(len(sections))]
+    for s in sentences:
+        done = 0
+        for i, sec in enumerate(sections):
+            if is_x_in_y(s, sec):
+                grouped_sentences[i].append(s)
+                done += 1
+        if done != 1:
+            breakpoint()
+
+    return grouped_sentences
 
 
 def verify_json_dict(json_dict):
@@ -66,10 +135,11 @@ def verify_json_dict(json_dict):
 class PwCJsonReader(DatasetReader):
     def __init__(
         self,
-        document_filter_type: str ,
+        document_filter_type: str,
         token_indexers: Dict[str, TokenIndexer] = None,
-        max_paragraph_length:int = 318,
-        merge_paragraph_length:int = 75,
+        max_paragraph_length: int = 300,
+        merge_paragraph_length: int = 75,
+        filter_to_salient: bool = False,
         lazy: bool = False,
     ) -> None:
         super().__init__(lazy)
@@ -77,6 +147,8 @@ class PwCJsonReader(DatasetReader):
         self._max_paragraph_length = max_paragraph_length
         self._merge_paragraph_length = merge_paragraph_length
         self._filter_type = document_filter_type
+        self.prediction_mode = False
+        self._filter_to_salient = filter_to_salient
 
     @overrides
     def _read(self, file_path: str):
@@ -92,9 +164,18 @@ class PwCJsonReader(DatasetReader):
 
         for dataset_path in datasets.values():
             with open(dataset_path, "r") as g:
-                for _, line in enumerate(g):
+                for idx, line in enumerate(g):
                     json_dict = json.loads(line)
+                    if self.prediction_mode:
+                        if 'method_subrelations' in json_dict :
+                            del json_dict["method_subrelations"]
+                        json_dict["n_ary_relations"] = []
                     json_dict = clean_json_dict(json_dict)
+
+                    if self._filter_to_salient:
+                        entities = json_dict["ner"]
+                        entities = {k: v for k, v in entities.items() if v[2] == "True"}
+                        json_dict["ner"] = entities
 
                     json_dict = filter_dispatcher[self._filter_type](json_dict)
 
@@ -108,12 +189,17 @@ class PwCJsonReader(DatasetReader):
                     entities: Dict[Tuple[int, int], str] = json_dict["ner"]
                     corefs: Dict[str, List[Tuple[int, int]]] = json_dict["coref"]
                     n_ary_relations: List[Dict[str, str]] = json_dict["n_ary_relations"]
+                    corefs_non_salient: Dict[str, List[Tuple[int, int]]] = {} #json_dict.get("coref_non_salient", {})
 
                     # Extract Document structure features
                     entities_to_features_map = self.extract_section_based_features(sentences, words, entities)
 
                     # Map cluster names to integer cluster ids
                     cluster_name_to_id: Dict[str, int] = {k: i for i, k in enumerate(sorted(list(corefs.keys())))}
+                    max_salient_cluster = len(corefs)
+                    non_salient_cluster_name_to_id = {
+                        k: max_salient_cluster + i for i, k in enumerate(sorted(list(corefs_non_salient.keys())))
+                    }
 
                     # Map Spans to list of clusters ids it belong to.
                     span_to_cluster_ids: Dict[Tuple[int, int], List[int]] = {}
@@ -123,13 +209,32 @@ class PwCJsonReader(DatasetReader):
 
                     span_to_cluster_ids = {span: sorted(v) for span, v in span_to_cluster_ids.items()}
 
+                    # Map Spans to list of non salient clusters they belong to.
+                    span_to_non_salient_cluster_ids: Dict[Tuple[int, int], List[int]] = {}
+                    for cluster_name in corefs_non_salient:
+                        for span in corefs_non_salient[cluster_name]:
+                            span_to_non_salient_cluster_ids.setdefault(span, []).append(
+                                non_salient_cluster_name_to_id[cluster_name]
+                            )
+
+                    span_to_non_salient_cluster_ids = {
+                        span: sorted(v) for span, v in span_to_non_salient_cluster_ids.items()
+                    }
+
+                    salient_cluster_label = [1] * max_salient_cluster + [0] * len(non_salient_cluster_name_to_id)
+                    assert sorted(list(cluster_name_to_id.values())) == list(range(max_salient_cluster)), breakpoint()
+                    assert sorted(list(non_salient_cluster_name_to_id.values())) == list(
+                        range(max_salient_cluster, max_salient_cluster + len(non_salient_cluster_name_to_id))
+                    ), breakpoint()
+
                     # Map types to list of cluster ids that are of that type
                     type_to_cluster_ids: Dict[str, List[int]] = {k: [] for k in used_entities}
 
                     for cluster_name in corefs:
-                        types = [entities[tuple(span)][1] for span in corefs[cluster_name]]
-                        assert len(set(types)) <= 1, breakpoint()
-                        if len(set(types)) == 1 :
+                        types = [entities[span][1] for span in corefs[cluster_name]]
+                        if len(set(types)) > 1:
+                            print(json_dict["doc_id"])
+                        if len(set(types)) == 1:
                             type_to_cluster_ids[types[0]].append(cluster_name_to_id[cluster_name])
 
                     # Map relations to list of cluster ids in it.
@@ -145,28 +250,29 @@ class PwCJsonReader(DatasetReader):
                     for k in type_to_cluster_ids:
                         type_to_cluster_ids[k] = sorted(list(set(type_to_cluster_ids[k])))
 
-                    coref_labels, coref_mask, coref_features = self.extract_coref_features(
-                        entities, words, span_to_cluster_ids
+                    # Move paragraph boundaries around to accomodate in BERT
+                    sections, sentences_grouped, entities_grouped = self.resize_paragraphs_and_group(
+                        sections, sentences, entities
                     )
 
-                    # Move paragraph boundaries around to accomodate in BERT
-                    sections, entities_grouped = self.resize_paragraphs_and_group(sections, entities)
-
                     document_metadata = {
+                        "cluster_labels" : salient_cluster_label,
+                        "salient_cluster_label" : salient_cluster_label,
                         "span_to_cluster_ids": span_to_cluster_ids,
                         "cluster_name_to_id": cluster_name_to_id,
+                        "span_to_non_salient_cluster_ids": span_to_non_salient_cluster_ids,
+                        "non_salient_cluster_name_to_id": non_salient_cluster_name_to_id,
                         "relation_to_cluster_ids": relation_to_cluster_ids,
                         "type_to_cluster_ids": type_to_cluster_ids,
                         "doc_key": doc_key,
                         "doc_length": len(words),
-                        "coref_labels": coref_labels,
-                        "coref_mask": coref_mask,
-                        "coref_features": coref_features,
                         "entities_to_features_map": entities_to_features_map,
                     }
 
                     # Loop over the sections.
-                    for paragraph_num, ((start_ix, end_ix), ner_dict) in enumerate(zip(sections, entities_grouped)):
+                    for paragraph_num, ((start_ix, end_ix), sentences, ner_dict) in enumerate(
+                        zip(sections, sentences_grouped, entities_grouped)
+                    ):
                         paragraph = words[start_ix:end_ix]
                         if len(paragraph) == 0:
                             breakpoint()
@@ -177,6 +283,7 @@ class PwCJsonReader(DatasetReader):
                             sentence_num=paragraph_num,
                             start_ix=start_ix,
                             end_ix=end_ix,
+                            sentence_indices=sentences,
                             document_metadata=document_metadata,
                         )
                         yield instance
@@ -185,7 +292,9 @@ class PwCJsonReader(DatasetReader):
         entities_to_features_map = {}
         sentence_features = [get_features_for_sections(sents, words) for sents in sentences]
         for e in entities:
-            index = [(i, j) for i, sents in enumerate(sentences) for j, sspan in enumerate(sents) if is_x_in_y(e, sspan)]
+            index = [
+                (i, j) for i, sents in enumerate(sentences) for j, sspan in enumerate(sents) if is_x_in_y(e, sspan)
+            ]
             assert len(index) == 1, breakpoint()
 
             i, j = index[0]
@@ -222,14 +331,19 @@ class PwCJsonReader(DatasetReader):
                 coref_features[i, j] = features
         return coref_labels, coref_mask, coref_features
 
-    def resize_paragraphs_and_group(self, paragraphs, entities):
+    def resize_paragraphs_and_group(self, paragraphs: List[Tuple[int, int]], sentences, entities):
         broken_paragraphs = move_boundaries(
             break_paragraphs(
                 collapse_paragraphs(paragraphs, min_len=20, max_len=self._max_paragraph_length),
                 max_len=self._max_paragraph_length,
             ),
-            entities,
+            list(entities.keys()),
         )
+
+        # try :
+        #     broken_paragraphs = break_and_collapse_sections(sentences, min_len=20, max_len=self._max_paragraph_length)
+        # except :
+        #     breakpoint()
 
         for p, q in zip(broken_paragraphs[:-1], broken_paragraphs[1:]):
             if p[1] != q[0] or p[1] < p[0] or q[1] < q[0]:
@@ -237,6 +351,7 @@ class PwCJsonReader(DatasetReader):
 
         paragraphs = broken_paragraphs
         entities_grouped = [{} for _ in range(len(paragraphs))]
+        sentences_grouped = [[] for _ in range(len(paragraphs))]
 
         # Group entities into paragraphs they belong to
         for e in entities:
@@ -246,119 +361,35 @@ class PwCJsonReader(DatasetReader):
                     entities_grouped[para_id][(e[0], e[1])] = entities[e]
                     is_in_n_para += 1
 
-            assert is_in_n_para == 1
+            assert is_in_n_para == 1, breakpoint()
 
-        zipped = zip(paragraphs, entities_grouped)
+        # for sec in sentences :
+        #     for s in sec :
+        #         is_in_n_para = 0
+        #         for para_id, p in enumerate(paragraphs) :
+        #             if is_x_in_y(s, p) :
+        #                 sentences_grouped[para_id].append(s)
+        #                 is_in_n_para += 1
+
+        #         assert is_in_n_para == 1, breakpoint()
+
+        zipped = zip(paragraphs, sentences_grouped, entities_grouped)
 
         # Remove Empty Paragraphs
-        paragraphs, entities_grouped = [], []
-        for p, e in zipped:
+        paragraphs, sentences_grouped, entities_grouped = [], [], []
+        for p, s, e in zipped:
             if p[1] - p[0] == 0:
                 assert len(e) == 0, breakpoint()
+                assert len(s) == 0, breakpoint()
                 continue
             paragraphs.append(p)
             entities_grouped.append(e)
+            sentences_grouped.append(s)
 
-        return paragraphs, entities_grouped
+        return paragraphs, sentences_grouped, entities_grouped
 
     def text_to_instance(self, *args, **kwargs):
         raise NotImplementedError
-
-
-@DatasetReader.register("pwc_json_span")
-class PwCSpanJsonReader(PwCJsonReader):
-    def __init__(
-        self,
-        max_span_width: int = 8,
-        token_indexers: Dict[str, TokenIndexer] = None,
-        max_paragraph_length=318,
-        merge_paragraph_length=75,
-        lazy: bool = False,
-    ) -> None:
-        super().__init__(lazy=lazy)
-        self._max_span_width = max_span_width
-        self._token_indexers = token_indexers
-        self._max_paragraph_length = max_paragraph_length
-        self._merge_paragraph_length = merge_paragraph_length
-
-    @overrides
-    def text_to_instance(
-        self,
-        sentence: List[str],
-        ner_dict: Dict[Tuple[int, int], Tuple[str]],
-        cluster_dict,
-        doc_key: str,
-        sentence_num: int,
-        start_ix: int,
-        end_ix: int,
-        cluster_name_to_id: Dict[str, int],
-        relation_to_cluster_ids: Dict[int, List[int]],
-    ):
-        text_field = TextField([Token(word) for word in sentence], self._token_indexers)
-        assert len(cluster_name_to_id) > 0
-        # Put together the metadata.
-        metadata = dict(
-            sentence=sentence,
-            ner_dict=ner_dict,
-            cluster_dict=cluster_dict,
-            doc_key=doc_key,
-            start_ix=0,
-            end_ix=len(sentence),
-            sentence_num=sentence_num,
-            start_pos_in_doc=start_ix,
-            end_pos_in_doc=end_ix,
-            cluster_name_to_id=cluster_name_to_id,
-            relation_to_cluster_ids=relation_to_cluster_ids,
-        )
-        metadata_field = MetadataField(metadata)
-
-        # Generate fields for text spans, ner labels, coref labels.
-        spans = []
-        span_ner_labels = []
-        span_coref_labels = []
-        for start, end in enumerate_spans(sentence, max_span_width=self._max_span_width):
-            span_ix = (start, end + 1)
-            label = ner_dict.get(span_ix, "")
-            coref_label = cluster_dict.get(span_ix, [])
-            if end - start + 1 == self._max_span_width and label == "":
-                for e in ner_dict:
-                    if is_x_in_y(span_ix, e):
-                        label = ner_dict[e]
-                        coref_label = cluster_dict[e]
-
-            span_ner_labels.append(map_label(label, (0, 1, 2)))
-
-            span_coref_labels.append(
-                MultiLabelField(
-                    coref_label, label_namespace="coref_labels", skip_indexing=True, num_labels=len(cluster_name_to_id)
-                )
-            )
-            spans.append(SpanField(start, end, text_field))
-
-        span_field = ListField(spans)
-        ner_label_field = SequenceLabelField(span_ner_labels, span_field, label_namespace="ner_labels")
-        coref_label_field = ListField(span_coref_labels)
-
-        relation_index_field = ListField(
-            [
-                MultiLabelField(
-                    v, label_namespace="coref_labels", skip_indexing=True, num_labels=len(cluster_name_to_id)
-                )
-                for k, v in relation_to_cluster_ids.items()
-            ]
-        )
-
-        # Pull it  all together.
-        fields = dict(
-            text=text_field,
-            spans=span_field,
-            ner_labels=ner_label_field,
-            coref_labels=coref_label_field,
-            relation_index=relation_index_field,
-            metadata=metadata_field,
-        )
-
-        return Instance(fields)
 
 
 @DatasetReader.register("pwc_json_crf")
@@ -370,6 +401,7 @@ class PwCTagJsonReader(PwCJsonReader):
         sentence_num: int,
         start_ix: int,
         end_ix: int,
+        sentence_indices: List[Tuple[int, int]],
         document_metadata: Dict[str, Any],
     ):
         text_field = TextField([Token(word) for word in sentence], self._token_indexers)
@@ -378,6 +410,8 @@ class PwCTagJsonReader(PwCJsonReader):
         cluster_name_to_id = document_metadata["cluster_name_to_id"]
         relation_to_cluster_ids = document_metadata["relation_to_cluster_ids"]
         span_to_cluster_ids = document_metadata["span_to_cluster_ids"]
+        span_to_non_salient_cluster_ids = document_metadata["span_to_non_salient_cluster_ids"]
+        non_salient_cluster_name_to_id = document_metadata["non_salient_cluster_name_to_id"]
         doc_key = document_metadata["doc_key"]
 
         metadata = dict(
@@ -387,6 +421,7 @@ class PwCTagJsonReader(PwCJsonReader):
             sentence_num=sentence_num,
             start_pos_in_doc=start_ix,
             end_pos_in_doc=end_ix,
+            sentence_indices=sentence_indices,
             document_metadata=document_metadata,
             num_spans=len(ner_dict),
         )
@@ -414,6 +449,7 @@ class PwCTagJsonReader(PwCJsonReader):
 
         spans = []
         span_coref_labels = []
+        span_non_salient_coref_labels = []
         span_link_labels = []
         span_entity_labels = []
         span_features = []
@@ -424,10 +460,10 @@ class PwCTagJsonReader(PwCJsonReader):
             spans.append(SpanField(int(s - start_ix), int(e - start_ix - 1), text_field))
             span_coref_labels.append(
                 MultiLabelField(
-                    span_to_cluster_ids.get((s, e), []),
+                    span_to_cluster_ids.get((s, e), []) + span_to_non_salient_cluster_ids.get((s, e), []),
                     label_namespace="coref_labels",
                     skip_indexing=True,
-                    num_labels=len(cluster_name_to_id),
+                    num_labels=len(cluster_name_to_id) + len(non_salient_cluster_name_to_id),
                 )
             )
             span_link_labels.append(1 if label[-1] == "True" else 0)
@@ -451,7 +487,7 @@ class PwCTagJsonReader(PwCJsonReader):
             fields["span_coref_labels"] = ListField(
                 [
                     MultiLabelField(
-                        [], label_namespace="coref_labels", skip_indexing=True, num_labels=len(cluster_name_to_id)
+                        [], label_namespace="coref_labels", skip_indexing=True, num_labels=len(cluster_name_to_id) + len(non_salient_cluster_name_to_id)
                     )
                 ]
             ).empty_field()

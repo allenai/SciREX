@@ -11,13 +11,6 @@ export CONFIG_FILE=dygie/training_config/bert_entity_linking_bert.jsonnet
 
 export CUDA_DEVICE=$CUDA_DEVICE
 
-SEED=10034
-PYTORCH_SEED=`expr $SEED / 10`
-NUMPY_SEED=`expr $PYTORCH_SEED / 10`
-export SEED=$SEED
-export PYTORCH_SEED=$PYTORCH_SEED
-export NUMPY_SEED=$NUMPY_SEED
-
 export IS_LOWERCASE=true
 
 export ERC_DATA_BASE_PATH=model_data/pwc_split_on_sectioned

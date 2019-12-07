@@ -17,9 +17,10 @@ export DATA_BASE_PATH=model_data/dataset_readers_paths
 
 export TRAIN_DATASETS=pwc
 export TRAIN_PATH=$DATA_BASE_PATH/train.json:$TRAIN_DATASETS
-export DEV_PATH=$DATA_BASE_PATH/test.json:pwc
+export DEV_PATH=$DATA_BASE_PATH/dev.json:pwc
 export TEST_PATH=$DATA_BASE_PATH/test.json:pwc
 
 export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_dygie_crf_n_ary/$1}
 
-allennlp train -s $OUTPUT_BASE_PATH --include-package dygie $RECOVER $CONFIG_FILE
+python -m allennlp.run evaluate --output-file $OUTPUT_BASE_PATH/metrics_test.json --include-package dygie \
+$OUTPUT_BASE_PATH/model.tar.gz $TEST_PATH

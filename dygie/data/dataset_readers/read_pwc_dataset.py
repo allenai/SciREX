@@ -1,145 +1,50 @@
+import argparse
+import json
+import os
 import sys
 
 sys.path.insert(0, "")
+
+
 from scripts.entity_utils import *
-from itertools import combinations
-import numpy as np
-import json
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
 
-def convert_cardinalities_to_spans(cardinalities) :
-    cardinalities = np.array(cardinalities)
-    span_ends = np.cumsum(cardinalities)
-    span_starts = span_ends - cardinalities
 
-    return list(zip(list(span_starts), list(span_ends)))
-
-
-def process_rows_for_doc(rows):
-    doc_id = rows.name
-    try:
-        rows = rows.sort_values(by=["para_num", "sentence_num"])
-    except:
-        breakpoint()
-
-    n_paragraphs = rows["para_num"].max() + 1
-    n_sections = rows["section_id"].max() + 1
-    n_sentences = rows['sentence_num'].max() + 1
-
-    sections = [0 for _ in range(n_sections)]
-    paragraphs = [0 for _ in range(n_paragraphs)]
-    sentences = [0 for _ in range(n_sentences)]
-
-    words = []
-    ner = []
-    relations = []
-    coreference = {}
-
-    rows = rows.to_dict("records")
-    coreference = {k: [] for e in used_entities for k in rows[0][e + "_Rel"]}
-
-    section_heads = [0] * n_sections
-
-    for index, row in enumerate(rows):
-        entities = [
-            [len(words) + e.token_start, len(words) + e.token_end, e.entity + "_" + (str(len(e.links) > 0)), e]
-            for e in row["entities"]
-        ]
-
-        words += row["words"]
-        ner += entities
-        paragraphs[row["para_num"]] += len(row["words"])
-        sections[row["section_id"]] += len(row["words"])
-        sentences[row['sentence_num']] += len(row['words'])
-
-        if row["para_id"] == 0 and row["sentence_id"] == 0:
-            section_heads[row["section_id"]] = row["words"]
-
-        for e in entities:
-            for k in e[-1].links:
-                coreference[k].append(e[:2])
-
-    ner = sorted(ner, key=lambda x: (x[0], x[1]))
-
-    for e1, e2 in combinations(ner, 2):
-        if e1[-1].entity != e2[-1].entity and len(e1[-1].links) > 0 and len(e2[-1].links) > 0:
-            t1 = set().union(*[rows[0][e1[-1].entity + "_Rel"][k] for k in e1[-1].links])
-            t2 = set().union(*[rows[0][e2[-1].entity + "_Rel"][k] for k in e2[-1].links])
-            if len(t1 & t2) > 0:
-                relations.append([e1[:2], e2[:2]])
-
-    for i, e in enumerate(ner):
-        ner[i] = e[:-1]
-
-    sentences = convert_cardinalities_to_spans(sentences)
-    sections = convert_cardinalities_to_spans(sections)
-
-    grouped_sentences = [[] for _ in range(len(sections))]
-    for sent_span in sentences :
-        is_in_n_sections = 0
-        for i, section_span in enumerate(sections) :
-            if is_x_in_y(sent_span, section_span) :
-                grouped_sentences[i].append(sent_span)
-                is_in_n_sections += 1
-
-        assert is_in_n_sections == 1
-
-    for e in ner:
-        assert any([is_x_in_y(e, x) for x in sections])
-
-    n_ary_relations = rows[0]["Relations"]
-
-    return {
-        "sentences" : grouped_sentences,
-        "sections": sections,
-        "words": words,
-        "ner": ner,
-        "coref": coreference,
-        "doc_id": doc_id,
-        "n_ary_relations": n_ary_relations,
-    }
+parser = argparse.ArgumentParser()
+parser.add_argument('--type', type=str, required=True)
+parser.add_argument('--input_file', type=str, required=True)
+parser.add_argument('--output_dir', type=str, required=True)
+parser.add_argument('--max_id', type=str, required=True)
 
 
-def read_dataframe(df_concat):
-    """
-    df_concat.columns = Index(['doc_id', 'para_id', 'section_id', 'sentence_id', 'sentence', 'words',
-    'entities', 'stats', 'Relations', 'Material_Rel', 'Method_Rel',
-    'Metric_Rel', 'Task_Rel', 'para_num', 'sentence_num'],
-    dtype='object')
-    """
-
-    return df_concat.groupby("doc_id").progress_apply(process_rows_for_doc)
-
-
-from sklearn.model_selection import train_test_split
-import os
-
-
-def dump_to_file(data, output_dir, max_id, test_size=0.3, random_state=1001):
-    data = data[data.index < max_id]
-    data.sort_index(inplace=True)
+def dump_to_file(input_file, output_dir, max_id, test_size=0.3, random_state=1001):
+    data = load_jsonl(input_file)
+    data = [x for x in data if x['doc_id'] < max_id]
+    print("Leftover documents , ", len(data))
+    data = sorted(data, key=lambda x : x['doc_id'])
     split_data = {}
     split_data["train"], remain_data = train_test_split(data, test_size=test_size, random_state=random_state)
     split_data["dev"], split_data["test"] = train_test_split(remain_data, test_size=0.5, random_state=random_state)
 
     os.makedirs(output_dir, exist_ok=True)
     for split in split_data:
-        split_data[split].to_json(os.path.join(output_dir, split + ".jsonl"), orient="records", lines=True)
+        annotations_to_jsonl(split_data[split], os.path.join(output_dir, split + ".jsonl"))
 
 
-def dump_all_to_file(data):
-    data.sort_index(inplace=True)
-    #     os.makedirs(output_dir, exist_ok=True)
-    for i in range(0, len(data.index), 20):
-        data.loc[data.index[i : i + 20]].to_json(
-            os.path.join("../model_data", "pwc_split_on_sectioned", str(i) + "_unannotated.jsonl"),
-            orient="records",
-            lines=True,
-        )
+def dump_all_to_file(input_file, output_dir):
+    data = load_jsonl(input_file)
+    print("Leftover documents , ", len(data))
+    data = sorted(data, key=lambda x : x['doc_id'])
+
+    os.makedirs(output_dir, exist_ok=True)
+    for i in range(0, len(data), 20):
+        annotations_to_jsonl(data[i:i+20], os.path.join(output_dir, str(i) + "_unannotated.jsonl"))
         json.dump(
-            {"pwc": os.path.join("model_data", "pwc_split_on_sectioned", str(i) + "_unannotated.jsonl")},
-            open(f"../model_data/dataset_readers_paths/{i}_unannotated.json", "w"),
+            {"pwc": os.path.join(output_dir, str(i) + "_unannotated.jsonl")},
+            open(os.path.join(os.path.dirname(output_dir), 'dataset_readers_paths/{i}_unannotated.json', "w")),
         )
 
 
@@ -175,7 +80,98 @@ def dump_sciERC_to_file(scierc_input_dir, output_dir):
         f.write("\n".join([json.dumps(ins) for ins in data]))
         f.close()
 
+from dygie.data.dataset_readers.pwc_json import clean_json_dict
+
+def convert_to_scierc(instance) :
+    instance = clean_json_dict(instance)
+    entities = instance['ner']
+    corefs = instance['coref']
+    n_ary_relations = instance['n_ary_relations']
+
+    sections = instance['sections']
+    sentences = instance['sentences']
+    words = instance['words']
+    words_grouped = [[words[s:e] for s, e in sent_list] for sent_list in sentences]
+    entities_grouped = [[[] for _ in range(len(sent_list))] for sent_list in sentences]
+    for e in entities :
+        index = [
+            (i, j) for i, sents in enumerate(sentences) for j, sspan in enumerate(sents) if is_x_in_y(e, sspan)
+        ]
+        assert len(index) == 1, breakpoint()
+        i, j = index[0]
+        entities_grouped[i][j].append((e[0], e[1], entities[e][1]))
+
+    coreference = []
+    relations = []
+
+    span_to_cluster_ids = {}
+    for cluster_name in corefs:
+        for span in corefs[cluster_name]:
+            span_to_cluster_ids.setdefault(tuple(span), []).append(cluster_name)
+
+    span_to_cluster_ids = {span: set(sorted(v)) for span, v in span_to_cluster_ids.items()}
+
+    cluster_to_relation = {}
+
+    for rel_idx, rel in enumerate(n_ary_relations):
+        for entity in used_entities:
+            cluster_to_relation.setdefault(rel[entity], []).append(rel_idx)
+    
+    cluster_to_relation = {c:set(v) for c, v in cluster_to_relation.items()}
+
+    for sec_entities in entities_grouped :
+        relation_sec = []
+        coreference_sec = {k:[] for k in corefs.keys()}
+        for entities in sec_entities :
+            relation_sentence = []
+            for i in range(len(entities)) :
+                for j in range(len(entities)) :
+                    if i < j or entities[i][2] == entities[j][2] :
+                        continue
+                    
+                    span_1, span_2 = (entities[i][0], entities[i][1]), (entities[j][0], entities[j][1])
+                    c1, c2 = span_to_cluster_ids.get(span_1, set()), span_to_cluster_ids.get(span_2, set())
+                    if len(set.union(set(), *[cluster_to_relation[c] for c in c1]) & set.union(set(), *[cluster_to_relation[c] for c in c2])) > 0:
+                        relation_sentence.append([span_1[0], span_1[1], span_2[0], span_2[1], 'USED-FOR'])
+
+                    if len(c1) > 0 :
+                        c1 = list(sorted(c1))[0]
+                        coreference_sec[c1].append(span_1)
+
+                    if len(c2) > 0 :
+                        c2 = list(sorted(c2))[0]
+                        coreference_sec[c2].append(span_2)
+
+            relation_sec.append(relation_sentence)
+
+        coreference.append([list(set(cluster)) for cluster in list(coreference_sec.values())])
+        relations.append(relation_sec)
+
+    scierc_data = []
+    for i in range(len(sections)) :
+        data = {}
+        data['sentences'] = words_grouped[i]
+        data['ner'] = entities_grouped[i]
+        data['clusters'] = coreference[i]
+        data['relations'] = relations[i]
+        data['doc_key'] = instance['doc_id'] + '_sec:' + str(i)
+        data['doc_id'] = instance['doc_id']
+        scierc_data.append(data)
+
+    return scierc_data
+
+from scripts.convert_brat_annotations_to_json import load_jsonl, annotations_to_jsonl
+def convert_to_scierc_all(file, output_file) :
+    data = load_jsonl(file)
+    scierc_data = []
+    for d in tqdm(data) :
+        scierc_data += convert_to_scierc(d)
+
+    annotations_to_jsonl(scierc_data, output_file)
 
 if __name__ == "__main__":
-    dump_sciERC_to_file("../data/sciERC_processed_data/json", "../data/sciERC_processed_data/json_pwc_format/")
+    args = parser.parse_args()
+    if args.type == 'scierc' :
+        convert_to_scierc_all(args.input_file, args.output_dir)
 
+    # dump_to_file(args.input_file, args.output_dir, args.max_id)
