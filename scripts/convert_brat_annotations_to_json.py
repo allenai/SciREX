@@ -15,8 +15,7 @@ from spacy.tokens import Doc
 from tqdm import tqdm
 
 tqdm.pandas()
-LabelSpan = namedtuple("Span", 
-["start", "end", "token_start", "token_end", "entity", "links", "modified"])
+LabelSpan = namedtuple("Span", ["start", "end", "token_start", "token_end", "entity", "links", "modified"])
 logging.basicConfig(level=logging.INFO)
 
 
@@ -174,8 +173,12 @@ def process_cluster(cluster):
 
     assert all((si == sj or not overlap(si[0], sj[0])) for si in new_spans for sj in new_spans), breakpoint()
     assert len(old_spans_unmodified) == 0 or len(old_spans_modified) == 0, breakpoint()
-    assert all((not overlap(ospan, nspan)) for ospan, _ in old_spans_modified for nspan, _ in new_spans), breakpoint()
-    assert all((not overlap(ospan, nspan)) for ospan, _ in old_spans_unmodified for nspan, _ in new_spans), breakpoint()
+    assert all(
+        (not overlap(ospan, nspan)) for ospan, _ in old_spans_modified for nspan, _ in new_spans
+    ), breakpoint()
+    assert all(
+        (not overlap(ospan, nspan)) for ospan, _ in old_spans_unmodified for nspan, _ in new_spans
+    ), breakpoint()
 
     if len(old_spans_modified + old_spans_unmodified) > 0 and len(new_spans) > 0:
         breakpoint()
@@ -267,11 +270,11 @@ def normalize_spans(row):
 
 
 def add_token_index(row):
-    if len(row['cluster']) == 0 :
+    if len(row["cluster"]) == 0:
         return []
     sentence = row["sentence_old"]
     words = row["words"]
-    word_indices = row['word_indices']
+    word_indices = row["word_indices"]
     sentence_start = row["sentence_start"]
     starts, ends = list(zip(*word_indices))
 
@@ -281,26 +284,31 @@ def add_token_index(row):
     new_cluster = []
     cluster = row["cluster"]
     for i, span in enumerate(cluster):
-        assert 'start' in span, breakpoint()
-        assert 'end' in span, breakpoint()
+        assert "start" in span, breakpoint()
+        assert "end" in span, breakpoint()
         if not (span["start"] in starts):
             if sentence[span["start"]].strip() == "":
                 span["start"] += 1
             else:
-                span["start"] = min(starts, key=lambda x: abs(x - span["start"]) if x < span["start"] else float("inf"))
+                span["start"] = min(
+                    starts, key=lambda x: abs(x - span["start"]) if x < span["start"] else float("inf")
+                )
 
         if not (span["end"] in ends):
             if sentence[span["end"] - 1].strip() == "":
                 span["end"] -= 1
             else:
-                span["end"] = min(ends, key=lambda x: abs(x - span["end"]) if x > span["end"] else float("inf"))
+                span["end"] = min(
+                    ends, key=lambda x: abs(x - span["end"]) if x > span["end"] else float("inf")
+                )
 
         span["token_start"] = starts.index(span["start"]) + sentence_start - len(words)
         span["token_end"] = ends.index(span["end"]) + 1 + sentence_start - len(words)
 
         for cleaned_span in new_cluster:
             if overlap(
-                (span["token_start"], span["token_end"]), (cleaned_span["token_start"], cleaned_span["token_end"])
+                (span["token_start"], span["token_end"]),
+                (cleaned_span["token_start"], cleaned_span["token_end"]),
             ):
                 print(row["doc_id"])
                 print(" ".join(row["words"]))
@@ -318,12 +326,12 @@ def generate_token_and_indices(sentence):
         key=lambda x: x[1],
     )
 
-    if len(words) == 0 or sentence.strip() == '':
+    if len(words) == 0 or sentence.strip() == "":
         return [], []
 
-    try :
-        words, indices = list(zip(*[(t, i) for t, i in words if t.strip() != '']))
-    except :
+    try:
+        words, indices = list(zip(*[(t, i) for t, i in words if t.strip() != ""]))
+    except:
         breakpoint()
 
     return words, indices
@@ -338,7 +346,9 @@ def compare_brat_annotations(ann_old_df, ann_new_df):
     df_merged = df_merged.sort_values(["doc_id", "sentence_id"]).reset_index(drop=True)
 
     logging.info("Applying Add Token Index ...")
-    df_merged["words"], df_merged['word_indices'] = list(zip(*df_merged["sentence_old"].progress_apply(generate_token_and_indices)))
+    df_merged["words"], df_merged["word_indices"] = list(
+        zip(*df_merged["sentence_old"].progress_apply(generate_token_and_indices))
+    )
     df_merged["num_words"] = df_merged["words"].progress_apply(len)
     df_merged["sentence_start"] = df_merged.groupby("doc_id")["num_words"].cumsum()
 
@@ -355,7 +365,9 @@ def compare_brat_annotations(ann_old_df, ann_new_df):
 
 
 def generate_relations_in_pwc_df(pwc_df):
-    pwc_df_keep = pwc_df[["s2_paper_id"] + true_entities + ["score"]].rename(columns=map_true_entity_to_available)
+    pwc_df_keep = pwc_df[["s2_paper_id"] + true_entities + ["score"]].rename(
+        columns=map_true_entity_to_available
+    )
     pwc_df_keep = (
         pwc_df_keep[(~pwc_df_keep.duplicated()) & (pwc_df_keep.s2_paper_id != "not_found")]
         .sort_values(["s2_paper_id"] + used_entities + ["score"])
@@ -374,7 +386,11 @@ def generate_relations_in_pwc_df(pwc_df):
 
 
 def combine_brat_to_original_data(
-    pwc_doc_file, pwc_sentence_file, pwc_prediction_file, original_brat_anno_folder, annotated_brat_anno_folder
+    pwc_doc_file,
+    pwc_sentence_file,
+    pwc_prediction_file,
+    original_brat_anno_folder,
+    annotated_brat_anno_folder,
 ):
     logging.info("Loading pwc docs ... ")
     pwc_df = load_pwc_full_text(pwc_doc_file)
@@ -390,8 +406,8 @@ def combine_brat_to_original_data(
     pwc_df_relations = pwc_df_relations.drop(columns=["doc_id"])
     pwc_df_relations: Dict[str, Relation] = pwc_df_relations.to_dict()["Relations"]
 
-    method_breaks = {d:
-        {   
+    method_breaks = {
+        d: {
             clean_name(rel.Method): [(i, clean_name(x)) for i, x in chunk_string(rel.Method)]
             for rel in relations
         }
@@ -399,11 +415,7 @@ def combine_brat_to_original_data(
     }
 
     pwc_df_relations = {
-        d: [{
-                k:clean_name(x) if k != 'score' else x
-                for k, x in rel._asdict().items()
-                } 
-            for rel in relations]
+        d: [{k: clean_name(x) if k != "score" else x for k, x in rel._asdict().items()} for rel in relations]
         for d, relations in pwc_df_relations.items()
     }
 
@@ -411,11 +423,13 @@ def combine_brat_to_original_data(
     pwc_sentences = load_pwc_sentence_predictions(pwc_sentence_file, pwc_prediction_file)
 
     pwc_sentences = pwc_sentences.merge(pwc_grouped, left_on="doc_id", right_on="s2_paper_id")
-    pwc_sentences = pwc_sentences.sort_values(by=["doc_id", "section_id", "para_id", "sentence_id"]).reset_index(
-        drop=True
-    )
+    pwc_sentences = pwc_sentences.sort_values(
+        by=["doc_id", "section_id", "para_id", "sentence_id"]
+    ).reset_index(drop=True)
 
-    pwc_sentences['words'] = pwc_sentences['words'].progress_apply(lambda x : generate_token_and_indices(" ".join(x))[0])
+    pwc_sentences["words"] = pwc_sentences["words"].progress_apply(
+        lambda x: generate_token_and_indices(" ".join(x))[0]
+    )
 
     df_changed = get_dataframe_from_folder(annotated_brat_anno_folder)
     df_original = get_dataframe_from_folder(original_brat_anno_folder)
@@ -448,11 +462,19 @@ def combine_brat_to_original_data(
     sentences = pwc_sentences.groupby(["doc_id", "sentence_num"])["num_words"].agg(sum)
     sections = pwc_sentences.groupby(["doc_id", "section_id"])["num_words"].agg(sum)
 
-    sections: Dict[str, Dict[int, int]] = {level: sections.xs(level).to_dict() for level in sections.index.levels[0]}
-    sentences: Dict[str, Dict[int, int]] = {level: sentences.xs(level).to_dict() for level in sentences.index.levels[0]}
+    sections: Dict[str, Dict[int, int]] = {
+        level: sections.xs(level).to_dict() for level in sections.index.levels[0]
+    }
+    sentences: Dict[str, Dict[int, int]] = {
+        level: sentences.xs(level).to_dict() for level in sentences.index.levels[0]
+    }
 
-    words_merged = df_merged.groupby("doc_id")["words"].agg(lambda words: [x for y in words for x in y]).to_dict()
-    entities = df_merged.groupby("doc_id")["entities"].agg(lambda ents: [x for y in ents for x in y]).to_dict()
+    words_merged = (
+        df_merged.groupby("doc_id")["words"].agg(lambda words: [x for y in words for x in y]).to_dict()
+    )
+    entities = (
+        df_merged.groupby("doc_id")["entities"].agg(lambda ents: [x for y in ents for x in y]).to_dict()
+    )
 
     def compute_start_end(cards):
         ends = list(np.cumsum(cards))
@@ -468,9 +490,9 @@ def combine_brat_to_original_data(
         sent = compute_start_end([sentences[d][i] for i in range(len(sentences[d]))])
         sec = compute_start_end([sections[d][i] for i in range(len(sections[d]))])
 
-        for e in entities[d] :
-            del e['start']
-            del e['end']
+        for e in entities[d]:
+            del e["start"]
+            del e["end"]
 
         combined_information[d] = {
             "words": words[d],
@@ -479,7 +501,7 @@ def combine_brat_to_original_data(
             "relations": pwc_df_relations[d],
             "entities": entities[d],
             "doc_id": d,
-            "method_subrelations" : method_breaks[d]
+            "method_subrelations": method_breaks[d],
         }
 
     return combined_information
@@ -526,7 +548,9 @@ def propagate_annotations(data_dict: Dict[str, Any]):
         if entities[(s, e)]["modified"] == True:
             span_text = words[s:e]
             possible_matches = [
-                (i, i + len(span_text)) for i in range(len(words)) if words[i : i + len(span_text)] == span_text
+                (i, i + len(span_text))
+                for i in range(len(words))
+                if words[i : i + len(span_text)] == span_text
             ]
 
             for match in possible_matches:
@@ -566,7 +590,9 @@ def propagate_annotations(data_dict: Dict[str, Any]):
                                     ):
                                         break
                                     else:
-                                        merged_links = set(entities[(s, e)]["links"]) | set(entities[span]["links"])
+                                        merged_links = set(entities[(s, e)]["links"]) | set(
+                                            entities[span]["links"]
+                                        )
                                         entities[(s, e)]["links"] = deepcopy(list(merged_links))
                                         entities[span]["links"] = deepcopy(list(merged_links))
                                         break
@@ -595,7 +621,9 @@ def propagate_annotations(data_dict: Dict[str, Any]):
                         add_match = False
 
                 if add_match:
-                    new_entities[match] = {k: deepcopy(entities[(s, e)][k]) for k in ["entity", "links", "modified"]}
+                    new_entities[match] = {
+                        k: deepcopy(entities[(s, e)][k]) for k in ["entity", "links", "modified"]
+                    }
                     new_entities[match]["token_start"] = match[0]
                     new_entities[match]["token_end"] = match[1]
 
@@ -604,7 +632,7 @@ def propagate_annotations(data_dict: Dict[str, Any]):
             if overlap(match, span):
                 assert entities[span]["modified"] == False or entities[span]["proped"], breakpoint()
                 if entities[span].get("proped", False):
-                    if match in new_entities :
+                    if match in new_entities:
                         del new_entities[match]
                 elif not entities[span]["modified"]:
                     del entities[span]
@@ -618,7 +646,9 @@ def propagate_annotations(data_dict: Dict[str, Any]):
             if e[0][0] >= disjoint_new_entities[-1][0][1]:
                 disjoint_new_entities.append(e)
 
-    assert not any(e[0] != f[0] and overlap(e[0], f[0]) for e in disjoint_new_entities for f in disjoint_new_entities)
+    assert not any(
+        e[0] != f[0] and overlap(e[0], f[0]) for e in disjoint_new_entities for f in disjoint_new_entities
+    )
 
     disjoint_new_entities = dict(disjoint_new_entities)
     assert not any(overlap(e, f) for e in disjoint_new_entities for f in entities), breakpoint()
@@ -629,9 +659,11 @@ def propagate_annotations(data_dict: Dict[str, Any]):
 
     data_dict["entities"] = [x for x in entities.values()]
 
-import argparse 
+
+import argparse
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--annotator')
+parser.add_argument("--annotator")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -640,7 +672,9 @@ if __name__ == "__main__":
         "data/pwc_s2_cleaned_text_v2.jsonl",
         "data/pwc_s2_cleaned_text_v2_sentences.jsonl",
         "outputs/pwc_s2_cleaned_text_v2_sentences_predictions.jsonl.clean",
-        "/home/sarthakj/brat/brat/data/result_extraction/outputs/second_phase_annotations_" + args.annotator + "/",
+        "/home/sarthakj/brat/brat/data/result_extraction/outputs/second_phase_annotations_"
+        + args.annotator
+        + "/",
         "/home/sarthakj/brat/brat/data/result_extraction/outputs/second_phase_annotations_original/",
     )
 
@@ -648,35 +682,35 @@ if __name__ == "__main__":
 
     data = [json.loads(line) for line in open("model_data/all_data_" + args.annotator + ".jsonl")]
     for d in tqdm(data):
-        names = [v for rel in d['relations'] for k, v in rel.items() if k != 'score']
-        names += [n for m, subm in d['method_subrelations'].items() for idx, n in subm]
+        names = [v for rel in d["relations"] for k, v in rel.items() if k != "score"]
+        names += [n for m, subm in d["method_subrelations"].items() for idx, n in subm]
         names = set(names)
         propagate_annotations(d)
 
         coreference = {n: [] for n in names}
         ner = []
-        for e in d['entities'] :
-            e['links'] = set(e['links'])
-            e['canon'] = 'Canonical_Name' in e['links']
-            if e['canon'] :
-                e['links'].remove('Canonical_Name')
-            if 'proped' in e :
-                del e['proped']
-            del e['modified']
-            e['links'] = e['links'] & names
+        for e in d["entities"]:
+            e["links"] = set(e["links"])
+            e["canon"] = "Canonical_Name" in e["links"]
+            if e["canon"]:
+                e["links"].remove("Canonical_Name")
+            if "proped" in e:
+                del e["proped"]
+            del e["modified"]
+            e["links"] = e["links"] & names
 
-            for l in e['links'] :
-                coreference[l].append([e['token_start'], e['token_end']])
+            for l in e["links"]:
+                coreference[l].append([e["token_start"], e["token_end"]])
 
-            ner.append((e['token_start'], e['token_end'], e['entity']))
+            ner.append((e["token_start"], e["token_end"], e["entity"]))
 
-        del d['entities']
-        d['n_ary_relations'] = d['relations']
-        del d['relations']
-        d['coref'] = coreference
-        d['ner'] = ner
+        del d["entities"]
+        d["n_ary_relations"] = d["relations"]
+        del d["relations"]
+        d["coref"] = coreference
+        d["ner"] = ner
 
-        assert d['sentences'][-1][-1] == len(d['words']), breakpoint()
-        assert d['sections'][-1][-1] == len(d['words']), breakpoint()
+        assert d["sentences"][-1][-1] == len(d["words"]), breakpoint()
+        assert d["sections"][-1][-1] == len(d["words"]), breakpoint()
 
     annotations_to_jsonl(data, "model_data/all_data_" + args.annotator + "_propagated.jsonl")
