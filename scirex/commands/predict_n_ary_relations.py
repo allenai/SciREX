@@ -69,7 +69,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
             predicted_relations, scores = n_ary_relations['candidates'], n_ary_relations['scores']
 
             metadata = output_res['n_ary_relation']['metadata'][0]
-            doc_id = metadata['doc_key']
+            doc_id = metadata['doc_id']
             coref_key_map = {k:i for i, k in metadata['document_metadata']['cluster_name_to_id'].items()}
         
             for i, rel in enumerate(predicted_relations) :

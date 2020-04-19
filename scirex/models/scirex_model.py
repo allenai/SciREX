@@ -17,7 +17,6 @@ from overrides import overrides
 from scirex.models.relations.entity_relation import RelationExtractor as NAryRelationExtractor
 from scirex.models.ner.ner_crf_tagger import NERTagger
 from scirex.models.span_classifiers.span_classifier import SpanClassifier
-from scirex.models.relations.cluster_saliency_classifier import ClusterClassifier as ClusterClassifier
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -45,19 +44,16 @@ class ScirexModel(Model):
         modules = Params(modules)
 
         self._ner = NERTagger.from_params(vocab=vocab, params=modules.pop("ner"))
-        self._saliency_classifier = SpanClassifier.from_params(vocab=vocab, params=modules.pop("saliency_classifier"))
+        self._saliency_classifier = SpanClassifier.from_params(
+            vocab=vocab, params=modules.pop("saliency_classifier")
+        )
         self._cluster_n_ary_relation = NAryRelationExtractor.from_params(
             vocab=vocab, params=modules.pop("n_ary_relation")
         )
 
-        self._train_cluster_classifier = False
-        if "cluster_classifier" in modules:
-            self._train_cluster_classifier = True
-            self._cluster_classifier = ClusterClassifier.from_params(
-                vocab=vocab, params=modules.pop("cluster_classifier")
-            )
-
-        self._endpoint_span_extractor = EndpointSpanExtractor(context_layer.get_output_dim(), combination="x,y")
+        self._endpoint_span_extractor = EndpointSpanExtractor(
+            context_layer.get_output_dim(), combination="x,y"
+        )
         self._attentive_span_extractor = SelfAttentiveSpanExtractor(input_dim=context_layer.get_output_dim())
 
         for k in loss_weights:
@@ -66,9 +62,7 @@ class ScirexModel(Model):
         self._permanent_loss_weights = copy.deepcopy(self._loss_weights)
 
         self._display_metrics = display_metrics
-        self._multi_task_loss_metrics = {
-            k: Average() for k in ["ner", "saliency", "n_ary_relation", "coref", "cluster_saliency"]
-        }
+        self._multi_task_loss_metrics = {k: Average() for k in ["ner", "saliency", "n_ary_relation"]}
 
         self.training_mode = True
         self.prediction_mode = False
@@ -79,17 +73,16 @@ class ScirexModel(Model):
     def forward(
         self,
         text,
-        ner_entity_labels,
+        ner_type_labels,
         spans=None,
-        span_coref_labels=None,
+        span_cluster_labels=None,
         span_saliency_labels=None,
-        span_entity_labels=None,
+        span_type_labels=None,
         span_features=None,
         relation_to_cluster_ids=None,
         metadata=None,
     ):
         torch.cuda.empty_cache()
-        print(metadata[0]['doc_key'], text['bert'].shape)
 
         output_dict = {}
         loss = 0.0
@@ -97,22 +90,20 @@ class ScirexModel(Model):
         output_embedding = self.embedding_forward(text)
 
         if self._loss_weights["ner"] > 0.0:
-            output_dict["ner"] = self.ner_forward(output_embedding, ner_entity_labels, metadata)
+            output_dict["ner"] = self.ner_forward(output_embedding=output_embedding, ner_type_labels=ner_type_labels, metadata=metadata)
             loss += self._loss_weights["ner"] * output_dict["ner"]["loss"]
 
         output_span_embedding = self.span_embeddings_forward(
-            output_embedding, spans, span_entity_labels, span_features, metadata
+            output_embedding, spans, span_type_labels, span_features, metadata
         )
-
-        if "cluster_saliency" in self._loss_weights and self._loss_weights["cluster_saliency"] > 0.0:
-            output_dict["cluster_saliency"] = self.cluster_saliency_forward(
-                output_span_embedding, metadata, span_coref_labels
-            )
-            loss += self._loss_weights["cluster_saliency"] * output_dict["cluster_saliency"]["loss"]
 
         if self._loss_weights["saliency"] > 0.0 or self._loss_weights["n_ary_relation"] > 0.0:
             output_dict["saliency"], output_dict["n_ary_relation"] = self.saliency_and_relation_forward(
-                output_span_embedding, metadata, span_saliency_labels, relation_to_cluster_ids, span_coref_labels
+                output_span_embedding,
+                metadata,
+                span_saliency_labels,
+                relation_to_cluster_ids,
+                span_cluster_labels,
             )
             loss += self._loss_weights["saliency"] * output_dict["saliency"]["loss"]
             loss += self._loss_weights["n_ary_relation"] * output_dict["n_ary_relation"]["loss"]
@@ -162,11 +153,11 @@ class ScirexModel(Model):
         }
         return output_embedding
 
-    def ner_forward(self, output_embedding, ner_entity_labels, metadata):
+    def ner_forward(self, output_embedding, ner_type_labels, metadata):
         output_ner = {"loss": 0.0}
 
         output_ner = self._ner(
-            output_embedding["contextualised"], output_embedding["mask"], ner_entity_labels, metadata
+            output_embedding["contextualised"], output_embedding["mask"], ner_type_labels, metadata
         )
 
         if self.prediction_mode:
@@ -176,20 +167,24 @@ class ScirexModel(Model):
 
         return output_ner
 
-    def span_embeddings_forward(self, output_embedding, spans, span_entity_labels, span_features, metadata):
+    def span_embeddings_forward(self, output_embedding, spans, span_type_labels, span_features, metadata):
         output_span_embeddings = {"valid": False}
 
         if spans.nelement() != 0:
-            span_mask, spans, span_embeddings = self.extract_span_embeddings(output_embedding["contextualised"], spans)
+            span_mask, spans, span_embeddings = self.extract_span_embeddings(
+                output_embedding["contextualised"], spans
+            )
 
             if span_mask.sum() != 0:
                 span_offset = self.offset_span_by_para_start(metadata, spans, span_mask)
                 span_position = self.get_span_position(metadata, span_offset)
-                span_entity_labels_one_hot = self.get_span_one_hot_labels(
-                    "span_entity_labels", span_entity_labels, spans
+                span_type_labels_one_hot = self.get_span_one_hot_labels(
+                    "span_type_labels", span_type_labels, spans
                 )
 
-                span_features = torch.cat([span_position, span_entity_labels_one_hot, span_features.float()], dim=-1)
+                span_features = torch.cat(
+                    [span_position, span_type_labels_one_hot, span_features.float()], dim=-1
+                )
                 featured_span_embeddings = torch.cat([span_embeddings, span_features], dim=-1)
                 span_ix = span_mask.view(-1).nonzero().squeeze(1).long()
 
@@ -199,14 +194,21 @@ class ScirexModel(Model):
                     "spans": span_offset,
                     "span_embeddings": span_embeddings,
                     "featured_span_embeddings": featured_span_embeddings,
-                    "span_entity_labels": span_entity_labels_one_hot,
+                    "span_type_labels": span_type_labels_one_hot,
                     "span_features": span_features.float(),
                     "valid": True,
                 }
 
         return output_span_embeddings
 
-    def saliency_forward(self, output_span_embedding, metadata, span_saliency_labels, span_coref_labels, saliency_threshold=None):
+    def saliency_forward(
+        self,
+        output_span_embedding,
+        metadata,
+        span_saliency_labels,
+        span_cluster_labels,
+        saliency_threshold=None,
+    ):
         output_saliency = {"loss": 0.0}
         if output_span_embedding["valid"]:
             spans, featured_span_embeddings, span_ix, span_mask = (
@@ -229,36 +231,12 @@ class ScirexModel(Model):
                 ner_probs = output_saliency["ner_probs"].squeeze(0)
                 ner_probs = (ner_probs > saliency_threshold).long()
 
-                clusters_to_keep = (span_coref_labels * ner_probs[:, :, None]).sum(0).sum(0)
+                clusters_to_keep = (span_cluster_labels * ner_probs[:, :, None]).sum(0).sum(0)
                 output_saliency["clusters_to_keep"] = clusters_to_keep.cpu().data.numpy()
 
         return output_saliency
 
-    def cluster_saliency_forward(self, output_span_embedding, metadata, span_coref_labels):
-        output_cluster_saliency = {"loss": 0.0}
-        if output_span_embedding["valid"]:
-            spans, featured_span_embeddings, span_ix, span_mask = (
-                output_span_embedding["spans"],
-                output_span_embedding["featured_span_embeddings"],
-                output_span_embedding["span_ix"],
-                output_span_embedding["span_mask"],
-            )
-
-            if span_coref_labels is not None or self.prediction_mode:
-                cluster_labels = metadata[0]["document_metadata"]["cluster_labels"]
-
-                output_cluster_saliency = self._cluster_classifier.compute_representations(
-                    spans=spans,
-                    span_mask=span_mask,
-                    span_embeddings=featured_span_embeddings,
-                    coref_labels=span_coref_labels,
-                    cluster_labels=torch.Tensor(cluster_labels).to(span_coref_labels.device),
-                    metadata=metadata,
-                )
-
-        return output_cluster_saliency
-
-    def relation_forward(self, output_span_embedding, metadata, relation_to_cluster_ids, span_coref_labels):
+    def relation_forward(self, output_span_embedding, metadata, relation_to_cluster_ids, span_cluster_labels):
         output_n_ary_relation = {"loss": 0.0}
 
         if output_span_embedding["valid"]:
@@ -269,12 +247,11 @@ class ScirexModel(Model):
                 output_span_embedding["span_mask"],
             )
 
-
             if relation_to_cluster_ids is not None or self.prediction_mode:
                 n_salient_clusters = len(metadata[0]["document_metadata"]["cluster_name_to_id"])
                 type_to_cluster_ids = metadata[0]["document_metadata"]["type_to_cluster_ids"]
                 relation_to_cluster_ids = metadata[0]["document_metadata"]["relation_to_cluster_ids"]
-                span_coref_labels = span_coref_labels[:, :, :n_salient_clusters]
+                span_cluster_labels = span_cluster_labels[:, :, :n_salient_clusters]
 
                 self._cluster_n_ary_relation.ignore_empty_clusters = True
 
@@ -282,7 +259,7 @@ class ScirexModel(Model):
                     spans=spans,
                     span_mask=span_mask,
                     span_embeddings=featured_span_embeddings,
-                    coref_labels=span_coref_labels,
+                    coref_labels=span_cluster_labels,
                     type_to_cluster_ids=type_to_cluster_ids,
                     relation_to_cluster_ids=relation_to_cluster_ids,
                     metadata=metadata,
@@ -296,7 +273,7 @@ class ScirexModel(Model):
         metadata,
         span_saliency_labels,
         relation_to_cluster_ids,
-        span_coref_labels,
+        span_cluster_labels,
         saliency_threshold=None,
     ):
         output_saliency = {"loss": 0.0}
@@ -324,8 +301,8 @@ class ScirexModel(Model):
                 ner_probs = output_saliency["ner_probs"].squeeze(0)
                 ner_probs = (ner_probs > saliency_threshold).long()
 
-                clusters_to_keep = (span_coref_labels * ner_probs[:, :, None]).sum(0).sum(0) == 0
-                span_coref_labels[:, :, clusters_to_keep] = 0
+                clusters_to_keep = (span_cluster_labels * ner_probs[:, :, None]).sum(0).sum(0) == 0
+                span_cluster_labels[:, :, clusters_to_keep] = 0
                 self._cluster_n_ary_relation.ignore_empty_clusters = True
 
             if relation_to_cluster_ids is not None or self.prediction_mode:
@@ -336,7 +313,7 @@ class ScirexModel(Model):
                     spans=spans,
                     span_mask=span_mask,
                     span_embeddings=featured_span_embeddings,
-                    coref_labels=span_coref_labels,
+                    coref_labels=span_cluster_labels,
                     type_to_cluster_ids=type_to_cluster_ids,
                     relation_to_cluster_ids=relation_to_cluster_ids,
                     metadata=metadata,
@@ -346,7 +323,9 @@ class ScirexModel(Model):
 
     def get_span_one_hot_labels(self, label_namespace, span_labels, spans):
         n_labels = self.vocab.get_vocab_size(label_namespace)
-        span_labels_one_hot = torch.zeros((span_labels.size(0), span_labels.size(1), n_labels)).to(spans.device)
+        span_labels_one_hot = torch.zeros((span_labels.size(0), span_labels.size(1), n_labels)).to(
+            spans.device
+        )
         span_labels_one_hot.scatter_(-1, span_labels.unsqueeze(-1), 1)
         return span_labels_one_hot
 
@@ -365,7 +344,9 @@ class ScirexModel(Model):
 
     @staticmethod
     def offset_span_by_para_start(metadata, spans, span_mask):
-        start_pos_in_doc = torch.LongTensor([x["start_pos_in_doc"] for x in metadata]).to(spans.device)  # (B,)
+        start_pos_in_doc = torch.LongTensor([x["start_pos_in_doc"] for x in metadata]).to(
+            spans.device
+        )  # (B,)
         para_offset = start_pos_in_doc.unsqueeze(1).unsqueeze(2)  # (B, 1, 1)
         span_offset = spans + (para_offset * span_mask.unsqueeze(-1).long())
         return span_offset
@@ -392,7 +373,7 @@ class ScirexModel(Model):
         output_span_embedding = self.span_embeddings_forward(
             output_embedding=output_embedding,
             spans=batch["spans"],
-            span_entity_labels=batch["span_entity_labels"],
+            span_type_labels=batch["span_type_labels"],
             span_features=batch["span_features"],
             metadata=batch["metadata"],
         )
@@ -401,7 +382,7 @@ class ScirexModel(Model):
             output_span_embedding=output_span_embedding,
             metadata=batch["metadata"],
             span_saliency_labels=batch["span_saliency_labels"],
-            span_coref_labels=batch["span_coref_labels"],
+            span_cluster_labels=batch["span_cluster_labels"],
             saliency_threshold=saliency_threshold,
         )
 
@@ -416,7 +397,7 @@ class ScirexModel(Model):
         output_span_embedding = self.span_embeddings_forward(
             output_embedding=output_embedding,
             spans=batch["spans"],
-            span_entity_labels=batch["span_entity_labels"],
+            span_type_labels=batch["span_type_labels"],
             span_features=batch["span_features"],
             metadata=batch["metadata"],
         )
@@ -427,7 +408,7 @@ class ScirexModel(Model):
             output_span_embedding=output_span_embedding,
             metadata=batch["metadata"],
             relation_to_cluster_ids=batch.get("relation_to_cluster_ids", None),
-            span_coref_labels=batch["span_coref_labels"],
+            span_cluster_labels=batch["span_cluster_labels"],
         )
 
         res = {}
@@ -440,7 +421,7 @@ class ScirexModel(Model):
         output_span_embedding = self.span_embeddings_forward(
             output_embedding=output_embedding,
             spans=batch["spans"],
-            span_entity_labels=batch["span_entity_labels"],
+            span_type_labels=batch["span_type_labels"],
             span_features=batch["span_features"],
             metadata=batch["metadata"],
         )
@@ -448,11 +429,11 @@ class ScirexModel(Model):
         output_cluster_saliency = self.cluster_saliency_forward(
             output_span_embedding=output_span_embedding,
             metadata=batch["metadata"],
-            span_coref_labels=batch["span_coref_labels"],
+            span_cluster_labels=batch["span_cluster_labels"],
         )
 
         res = {}
-        res['cluster_saliency'] = self._cluster_classifier.decode(output_cluster_saliency)
+        res["cluster_saliency"] = self._cluster_classifier.decode(output_cluster_saliency)
 
         return res
 
@@ -464,14 +445,8 @@ class ScirexModel(Model):
         metrics_ner = self._ner.get_metrics(reset=reset)
         metrics_saliency = self._saliency_classifier.get_metrics(reset=reset)
         metrics_n_ary = self._cluster_n_ary_relation.get_metrics(reset=reset)
-        metrics_coref = self._coref.get_metrics(reset=reset)
         metrics_loss = {"loss_" + k: v.get_metric(reset) for k, v in self._multi_task_loss_metrics.items()}
         metrics_loss = {k: (v.item() if hasattr(v, "item") else v) for k, v in metrics_loss.items()}
-
-        if self._train_cluster_classifier:
-            metrics_cluster_saliency = self._cluster_classifier.get_metrics(reset=reset)
-        else:
-            metrics_cluster_saliency = {}
 
         # Make sure that there aren't any conflicting names.
         metric_names = (
@@ -479,8 +454,6 @@ class ScirexModel(Model):
             + list(metrics_saliency.keys())
             + list(metrics_n_ary.keys())
             + list(metrics_loss.keys())
-            + list(metrics_coref.keys())
-            + list(metrics_cluster_saliency.keys())
         )
         assert len(set(metric_names)) == len(metric_names)
         all_metrics = dict(
@@ -488,8 +461,6 @@ class ScirexModel(Model):
             + list(metrics_saliency.items())
             + list(metrics_n_ary.items())
             + list(metrics_loss.items())
-            + list(metrics_coref.items())
-            + list(metrics_cluster_saliency.items())
         )
 
         all_metrics["validation_metric"] = (
@@ -498,11 +469,6 @@ class ScirexModel(Model):
             + self._loss_weights["n_ary_relation"]
             * nan_to_zero(metrics_n_ary.get("n_ary_rel_global_macro-avg.f1-score", 0))
         )
-
-        if self._train_cluster_classifier:
-            all_metrics["validation_metric"] += self._loss_weights["cluster_saliency"] * nan_to_zero(
-                metrics_cluster_saliency.get("cluster_1.0.f1-score", 0)
-            )
 
         self._display_metrics.append("validation_metric")
         # If no list of desired metrics given, display them all.

@@ -1,7 +1,7 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-from scripts.entity_utils import *
+from scirex_utilities.entity_utils import *
 
 def generate_matrix_for_document(document, span_field, matrix_field) :
     span2idx = {tuple(k):i for i, k in enumerate(document[span_field])}

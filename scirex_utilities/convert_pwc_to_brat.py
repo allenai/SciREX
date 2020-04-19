@@ -4,16 +4,16 @@ import click
 
 from tqdm import tqdm
 from collections import defaultdict
-from runtime_scripts.read_all_files import get_all_file_outputs
+from runtime_scirex_utilities.read_all_files import get_all_file_outputs
 
 
 BASEPATH = os.getenv("RESULT_EXTRACTION_BASEPATH", ".")
-from scripts.entity_utils import *
-from scripts.entity_matching_algorithms import *
-from scripts.analyse_pwc_entity_results import *
+from scirex_utilities.entity_utils import *
+from scirex_utilities.entity_matching_algorithms import *
+from scirex_utilities.analyse_pwc_entity_results import *
 from dygie.data.dataset_readers.paragraph_utils import move_boundaries
 
-BRAT_CONFIGS_FOLDER = os.path.join(BASEPATH, "scripts/brat_configs")
+BRAT_CONFIGS_FOLDER = os.path.join(BASEPATH, "scirex_utilities/brat_configs")
 
 
 def generate_folders_for_documents(pwc_grouped, BRAT_ANNO_FOLDER):

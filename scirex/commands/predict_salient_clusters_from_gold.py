@@ -15,7 +15,7 @@ parser.add_argument("--gold-file")
 parser.add_argument("--cluster-file")
 
 from scirex.commands.utils import *
-from scripts.convert_brat_annotations_to_json import load_jsonl, annotations_to_jsonl
+from scirex_utilities.convert_brat_annotations_to_json import load_jsonl, annotations_to_jsonl
 
 import logging
 

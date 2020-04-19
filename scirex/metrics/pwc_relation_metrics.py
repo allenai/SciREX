@@ -3,7 +3,7 @@ from typing import List, Any
 
 from allennlp.training.metrics.metric import Metric
 
-from scirex.training.f1 import compute_f1
+from scirex.metrics.f1 import compute_f1
 import numpy as np
 
 class RelationMetrics(Metric):

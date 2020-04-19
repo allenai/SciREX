@@ -1,10 +1,10 @@
 import json
 import numpy as np
-from scripts.entity_utils import *
+from scirex_utilities.entity_utils import *
 from itertools import combinations, product
 from scirex.models.global_analysis import *
 
-from scirex.data.dataset_readers.read_pwc_dataset import is_x_in_y
+from scirex.data.dataset_readers.scirex_full_reader import is_x_in_y
 
 
 def get_relations_between_clusters(document, span_field, cluster_labels):

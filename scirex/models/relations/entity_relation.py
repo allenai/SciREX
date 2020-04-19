@@ -9,10 +9,10 @@ from allennlp.models.model import Model
 from allennlp.modules import FeedForward, TimeDistributed
 from allennlp.nn import InitializerApplicator, RegularizerApplicator, util
 from overrides import overrides
-from scripts.entity_utils import used_entities
+from scirex_utilities.entity_utils import used_entities
 
-from scirex.training.n_ary_relation_metrics import NAryRelationMetrics
-from scirex.training.thresholding_f1_metric import BinaryThresholdF1
+from scirex.metrics.n_ary_relation_metrics import NAryRelationMetrics
+from scirex.metrics.thresholding_f1_metric import BinaryThresholdF1
 
 from collections import defaultdict
 
@@ -175,7 +175,7 @@ class RelationExtractor(Model):
         output_dict["cluster_to_size_map"] = cluster_to_size_map
         output_dict["relation_labels"] = candidate_relations_labels
         output_dict["relation_types"] = candidate_relations_types
-        output_dict["doc_id"] = metadata[0]["doc_key"]
+        output_dict["doc_id"] = metadata[0]["doc_id"]
         output_dict["metadata"] = metadata
         output_dict["relation_scores"] = relation_scores
         output_dict["relation_logits"] = relation_logits

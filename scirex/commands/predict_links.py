@@ -50,7 +50,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
 
             cluster_size = output_res['clusters_size']
             metadata = output_res['linked']['metadata'][0]
-            doc_id = metadata['doc_key']
+            doc_id = metadata['doc_id']
             coref_key_map = {k:i for i, k in metadata['document_metadata']['cluster_name_to_id'].items()}
 
             linked_clusters = {coref_key_map[i]:int(c) for i, c in enumerate(cluster_size)}

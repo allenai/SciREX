@@ -11,9 +11,8 @@ from allennlp.models.model import Model
 from allennlp.modules.token_embedders import Embedding
 from allennlp.modules import FeedForward
 from allennlp.modules import TimeDistributed
-from scirex.models.prescored_pruner import PrescoredPruner
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
-from scirex.training.thresholding_f1_metric import BinaryThresholdF1
+from scirex.metrics.thresholding_f1_metric import BinaryThresholdF1
 
 from scirex.models import shared
 

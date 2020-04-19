@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Tuple
 from allennlp.training.metrics.metric import Metric
 import pandas as pd
 
-from scirex.training.f1 import compute_f1
+from scirex.metrics.f1 import compute_f1
 
 
 class NERMetrics(Metric):

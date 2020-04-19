@@ -1,5 +1,5 @@
-from scripts.entity_matching_algorithms import *
-from scripts.entity_utils import *
+from scirex_utilities.entity_matching_algorithms import *
+from scirex_utilities.entity_utils import *
 import numpy as np 
 
 def match_clusters(c1, c2) :

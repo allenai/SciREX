@@ -70,7 +70,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
 #                     x[k] = "_".join(x[k])
 
             metadata = decoded["ner"]["metadata"]
-            doc_ids: List[str] = [m["doc_key"] for m in metadata]
+            doc_ids: List[str] = [m["doc_id"] for m in metadata]
             assert len(set(doc_ids)) == 1
             para_ids: List[int] = [m["sentence_num"] for m in metadata]
             para_starts: List[int] = [int(m["start_pos_in_doc"]) for m in metadata]
@@ -79,7 +79,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
 
 #             relation_spans = decoded["relation"]["spans"]
 #             relation_scores = decoded["relation"]["relation_scores"]
-#             relation_doc_id = [m["doc_key"] for m in metadata]
+#             relation_doc_id = [m["doc_id"] for m in metadata]
 #             assert len(set(relation_doc_id)) == 1
 #             relation_doc_id = relation_doc_id[0]
 

@@ -7,7 +7,7 @@ from allennlp.data.dataset_readers.dataset_utils.span_utils import bioul_tags_to
 
 tqdm.pandas()
 
-from scripts.entity_utils import available_entity_types_sciERC, BASEPATH
+from scirex_utilities.entity_utils import available_entity_types_sciERC, BASEPATH
 
 
 def get_spans(taglist, wordlist):

@@ -1,6 +1,6 @@
 {
   dataset_reader: {
-    type: "pwc_linker_bert",
+    type: "scirex_coreference_train_reader",
     token_indexers: {
       bert: {
         type: "bert-pretrained",
@@ -29,16 +29,11 @@
       activations: ["relu", "linear"],
       dropout: [0.2, 0.0]
     },
-    featured : false,
-     initializer: [
-      [".*linear_layers.*weight", {"type": "xavier_normal"}],
-      [".*token_embedder_tokens\\._projection.*weight", {"type": "xavier_normal"}]
-     ]
    },
   iterator: {
     type: "bucket_sample",
     sorting_keys: [],
-    batch_size: 50
+    batch_size: 100
   },
 
   trainer: {
@@ -50,7 +45,8 @@
     validation_metric: "+f1",
     optimizer: {
       type: "adam",
-      lr: 0.001
+      lr: 2e-5
     }
-  }
+  },
+  evaluate_on_test: true
 }

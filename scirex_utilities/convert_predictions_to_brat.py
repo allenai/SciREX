@@ -5,9 +5,9 @@ import click
 from tqdm import tqdm
 
 BASEPATH = os.getenv("nfs_path", ".")
-from scripts.entity_utils import *
+from scirex_utilities.entity_utils import *
 
-BRAT_CONFIGS_FOLDER = os.path.join(BASEPATH, "scripts/brat_configs")
+BRAT_CONFIGS_FOLDER = os.path.join(BASEPATH, "scirex_utilities/brat_configs")
 
 def add_to_text_with_ent(text, w, ent_id, enttype, ann_file) :
     start = len(text)

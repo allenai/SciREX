@@ -12,7 +12,7 @@ from allennlp.models.model import Model
 from allennlp.modules import FeedForward
 from allennlp.modules import TimeDistributed
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
-from scirex.training.thresholding_f1_metric import BinaryThresholdF1
+from scirex.metrics.thresholding_f1_metric import BinaryThresholdF1
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -23,7 +23,6 @@ class SpanClassifier(Model):
         vocab: Vocabulary,
         mention_feedforward: FeedForward,
         label_namespace: str,
-        balancing_strategy: str = None,
         n_features: int = 0,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None,
@@ -31,15 +30,9 @@ class SpanClassifier(Model):
         super(SpanClassifier, self).__init__(vocab, regularizer)
         self._label_namespace = label_namespace
 
-        self.register_buffer("_class_weight", torch.Tensor([1.0]))
-        self.register_buffer("_sample_prob", torch.Tensor([1.0]))
-        self._registered_loss_modifiers = False
-
         self._mention_feedforward = TimeDistributed(mention_feedforward)
         self._ner_scorer = TimeDistributed(torch.nn.Linear(mention_feedforward.get_output_dim() + n_features, 1))
         self._ner_metrics = BinaryThresholdF1()
-
-        self._balancing_strategy = balancing_strategy
 
         initializer(self)
 
@@ -82,25 +75,6 @@ class SpanClassifier(Model):
     def _compute_loss_for_scores(self, ner_probs, ner_labels, metadata):
         ner_probs_flat = ner_probs.view(-1)
         ner_labels_flat = ner_labels.view(-1)
-
-        # if not self._registered_loss_modifiers:
-        #     sample_prob = metadata[0]["ner_labels_sample_prob"]
-        #     for k, v in sample_prob.items():
-        #         self._sample_prob[self._label_map[k]] = v
-
-        #     class_weight = metadata[0]["ner_labels_class_weight"]
-        #     for k, v in class_weight.items():
-        #         self._class_weight[self._label_map[k]] = v
-
-        #     self._registered_loss_modifiers = True
-            
-        # class_weight = None
-        # if self._balancing_strategy == 'sample' :            
-        #     keep_element = torch.bernoulli(self._sample_prob[ner_labels_flat]).byte()
-        #     ner_scores_flat = ner_scores_flat[keep_element]
-        #     ner_labels_flat = ner_labels_flat[keep_element]
-        # elif self._balancing_strategy == 'class_weight' :
-        #     class_weight = self._class_weight
 
         loss = torch.nn.BCELoss(reduction="mean")(ner_probs_flat, ner_labels_flat.float())
         return loss

@@ -3,6 +3,7 @@ from overrides import overrides
 import numpy as np
 import torch
 from allennlp.training.metrics.metric import Metric
+from sklearn.metrics import precision_recall_fscore_support
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -22,8 +23,6 @@ class BinaryThresholdF1(Metric):
         self.matched_counts = np.array([0] * self._n_bins)
         self.predicted_counts = np.array([0] * self._n_bins)
         self.total_counts = np.array([0] * self._n_bins)
-        self.activation_mean = 0.0
-        self.activation_stddev = 0.0
         self.n = 0
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor):
@@ -35,9 +34,6 @@ class BinaryThresholdF1(Metric):
 
         pred = pred.ravel().astype(float)
         gold = gold.ravel().astype(int)
-
-        self.activation_mean += np.mean(pred)
-        self.activation_stddev += np.std(pred)
         self.n += 1
 
         assert np.all(pred <= 1.0), breakpoint()
@@ -56,7 +52,7 @@ class BinaryThresholdF1(Metric):
         recall = _prf_divide(self.matched_counts, self.total_counts)
         f1 = _prf_divide(2 * precision * recall, (precision + recall))
 
-        best_idx = np.argmin(np.abs(precision - recall))
+        best_idx = np.argmax(f1)
         best_threshold = self.bins[best_idx]
 
         metrics = {
@@ -66,7 +62,6 @@ class BinaryThresholdF1(Metric):
         }
 
         if reset:
-            # metrics.update({"mean_a": self.activation_mean / self.n, "std_a": self.activation_stddev / self.n})
             self.reset()
 
         metrics.update(
@@ -85,8 +80,6 @@ class BinaryThresholdF1(Metric):
         self.matched_counts = np.array([0] * self._n_bins)
         self.predicted_counts = np.array([0] * self._n_bins)
         self.total_counts = np.array([0] * self._n_bins)
-        self.activation_mean = 0.0
-        self.activation_stddev = 0.0
         self.n = 0
 
 

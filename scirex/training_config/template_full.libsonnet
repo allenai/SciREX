@@ -27,7 +27,7 @@ function(p) {
     input_dim: input_dim,
     num_layers: 2,
     hidden_dims: 150,
-    activations: "relu",
+    activations: "gelu",
     dropout: 0.2
   },
 
@@ -61,8 +61,6 @@ function(p) {
   dataset_reader: {
     type: 'scirex_full_reader',
     token_indexers: token_indexers,
-    document_filter_type: p.document_filter,
-    filter_to_salient: p.filter_to_salient,
   },
   train_data_path: std.extVar("TRAIN_PATH"),
   validation_data_path: std.extVar("DEV_PATH"),
@@ -81,7 +79,6 @@ function(p) {
       },
       ner: {
         mention_feedforward: make_feedforward(context_encoder_dim),
-        label_namespace: 'ner_entity_labels',
         label_encoding: 'BIOUL',
       },
       relation: {
@@ -96,9 +93,6 @@ function(p) {
         antecedent_feedforward: make_feedforward(4*featured_embedding_dim),
 	      relation_cardinality: p.relation_cardinality
       },
-      cluster_classifier: {
-        antecedent_feedforward: make_feedforward(featured_embedding_dim),
-      },
     }
   },
   iterator: {
@@ -110,16 +104,16 @@ function(p) {
     batch_size: 50,
   },
   trainer: {
-    num_epochs: 30,
+    num_epochs: 20,
     grad_norm: 5.0,
-    patience : 7,
+    patience : 10,
     cuda_device : std.extVar("CUDA_DEVICE"),
     validation_metric: '+validation_metric',
     learning_rate_scheduler: {
       type: "reduce_on_plateau",
       factor: 0.5,
       mode: "max",
-      patience: 20
+      patience: 5
     },
     optimizer: {
       type: "adam",
@@ -130,5 +124,6 @@ function(p) {
     },
     num_serialized_models_to_keep: 1,
     should_log_learning_rate: true
-  }
+  },
+  evaluate_on_test: true
 }

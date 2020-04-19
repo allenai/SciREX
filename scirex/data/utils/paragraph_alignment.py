@@ -1,68 +1,10 @@
-from collections import defaultdict
-from copy import deepcopy
-from typing import Callable, Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 
-is_x_in_y = lambda x, y: x[0] >= y[0] and x[1] <= y[1]
+from scirex.data.utils.span_utils import is_x_in_y
 
-
-def break_and_collapse_sections(sentences: List[List[Tuple[int, int]]], min_len=100, max_len=400):
-    new_sentences = []
-
-    current_section = []
-    current_length = 0
-    for section in sentences :
-        section_length = section[-1][1] - section[0][0]
-
-        if current_length > max_len :
-            new_sentences.append(current_section)
-            current_section = []
-            current_length = 0
-
-        if section_length < min_len :
-            current_section += section
-            current_length += section_length
-
-        else :
-            new_sentences.append(current_section + section)
-            current_section = []
-            current_length = 0
-
-    if len(current_section) > 0:
-        new_sentences.append(current_section)
-
-    assert [s for sec in new_sentences for s in sec] == [s for sec in sentences for s in sec], breakpoint()
-
-    broken_sections = []
-    for section in new_sentences :
-        section_length = section[-1][1] - section[0][0]
-        if section_length < max_len :
-            broken_sections.append(section)
-        else :
-            current_section = []
-            current_length = 0
-            for sentence in section :
-                sentence_length = sentence[1] - sentence[0]
-                if current_length + sentence_length > max_len :
-                    if len(current_section) > 0:
-                        broken_sections.append(current_section)
-                    current_section = [sentence]
-                    current_length = sentence_length
-                else :
-                    current_section.append(sentence)
-                    current_length += sentence_length
-
-            if len(current_section) > 0:
-                broken_sections.append(current_section)
-
-    assert broken_sections[0][0] == sentences[0][0]
-    assert broken_sections[-1][-1] == sentences[-1][-1]
-
-    try :
-        return [(x[0][0], x[-1][-1]) for x in broken_sections]
-    except :
-        breakpoint()
+Span = Tuple[int, int]
 
 
 def collapse_paragraphs(plist, min_len=100, max_len=400):
@@ -141,14 +83,15 @@ def move_boundaries(plist, elist):
     return new_paragraphs
 
 
-def get_wastage(para_lengths):
-    total_padded_input = [max(p) * len(p) for i, p in enumerate(para_lengths)]
-    total_input = [sum(p) for i, p in enumerate(para_lengths)]
-    return (sum(total_padded_input) - sum(total_input)) / sum(total_padded_input) * 100
+def group_sentences_to_sections(sentences: List[Span], sections: List[Span]) -> List[List[Span]]:
+    grouped_sentences = [[] for _ in range(len(sections))]
+    for s in sentences:
+        done = 0
+        for i, sec in enumerate(sections):
+            if is_x_in_y(s, sec):
+                grouped_sentences[i].append(s)
+                done += 1
+        if done != 1:
+            breakpoint()
 
-
-def gen_lens(plist):
-    return [p[1] - p[0] for p in plist]
-
-
-
+    return grouped_sentences

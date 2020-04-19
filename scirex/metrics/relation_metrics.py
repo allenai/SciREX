@@ -2,7 +2,7 @@ from overrides import overrides
 
 from allennlp.training.metrics.metric import Metric
 
-from scirex.training.f1 import compute_f1
+from scirex.metrics.f1 import compute_f1
 
 
 class RelationMetrics(Metric):

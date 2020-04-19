@@ -1,4 +1,4 @@
-from scripts.preprocessing.grobid_util import *
+from scirex_utilities.preprocessing.grobid_util import *
 
 import os
 BASEPATH = os.getenv('RESULT_EXTRACTION_BASEPATH', '.')

@@ -4,7 +4,7 @@ from allennlp.training.metrics.metric import Metric
 import pandas as pd
 from sklearn.metrics import classification_report
 
-from scirex.training.f1 import compute_threshold
+from scirex.metrics.f1 import compute_threshold
 
 
 class NAryRelationMetrics(Metric):

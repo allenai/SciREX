@@ -1,7 +1,7 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-from scripts.entity_utils import *
+from scirex_utilities.entity_utils import *
 import pandas as pd
 import seaborn as sns
 

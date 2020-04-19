@@ -11,8 +11,8 @@ from scirex.models.bert_token_embedder_modified import PretrainedBertEmbedder
 from scirex.metrics.thresholding_f1_metric import BinaryThresholdF1
 
 
-@Model.register("bert_coreference")
-class BertCoreference(Model):
+@Model.register("doctaet")
+class DoctaetModel(Model):
     def __init__(
         self,
         vocab: Vocabulary,
@@ -29,11 +29,20 @@ class BertCoreference(Model):
         self.bert_model = bert_model.bert_model
 
         self._label_namespace = label_namespace
+        print(list(self.vocab._retained_counter["labels"].items()))
 
+        label_vocab = self.vocab.get_index_to_token_vocabulary('labels')
+
+        total_size = sum(self.vocab._retained_counter['labels'].values())
+        self._class_weight = [0] * len(label_vocab)
+        for i, t in label_vocab.items() :
+            self._class_weight[i] = total_size / self.vocab._retained_counter['labels'][t]
+        
         self._dropout = torch.nn.Dropout(p=dropout)
+        self._pos_index = self.vocab.get_token_to_index_vocabulary(label_namespace)['True']
 
         self._classification_layer = aggregate_feedforward
-        self._loss = torch.nn.CrossEntropyLoss()
+        self._loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(self._class_weight))
         self._index = index
 
         self._f1 = BinaryThresholdF1()
@@ -53,18 +62,14 @@ class BertCoreference(Model):
 
         _, pooled = self.bert_model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=input_mask)
 
-        pooled = self._dropout(pooled)
-
-        # apply classification layer
-        label_logits = self._classification_layer(pooled)
-
+        label_logits = self._classification_layer(self._dropout(pooled))
         label_probs = torch.nn.functional.softmax(label_logits, dim=-1)
 
-        output_dict = {"label_probs": label_probs[..., 1]}
+        output_dict = {"label_probs": label_probs[..., self._pos_index]}
 
         if label is not None:
             loss = self._loss(label_logits, label.long().view(-1))
-            self._f1(label_probs[..., 1], label.long().view(-1))
+            self._f1(label_probs[..., self._pos_index], label.long().view(-1))
             output_dict["loss"] = loss
 
         if metadata is not None:

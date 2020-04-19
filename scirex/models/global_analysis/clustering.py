@@ -1,7 +1,7 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-from scripts.entity_utils import *
+from scirex_utilities.entity_utils import *
 
 from sklearn.cluster import AgglomerativeClustering, DBSCAN
 from sklearn.metrics import silhouette_score
@@ -106,7 +106,7 @@ def get_linked_clusters(clusters) :
 
 #     return scorer.get_metric(reset=True)
 
-from scirex.training.evaluation import match_clusters
+from scirex.metrics.evaluation import match_clusters
 def match_cluster_to_true(cluster, entities, threshold):
     if len(cluster['words']) == 0 :
         return None

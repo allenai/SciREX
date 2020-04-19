@@ -6,11 +6,11 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-from scirex.training.f1 import compute_f1
-from scirex.training.span_f1_metrics import span_match
+from scirex.metrics.f1 import compute_f1
+from scirex.metrics.span_f1_metrics import span_match
 from itertools import product, combinations
 
-from scripts.entity_utils import used_entities
+from scirex_utilities.entity_utils import used_entities
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test-file")

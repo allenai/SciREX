@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import spacy
-from scripts.analyse_pwc_entity_results import *
-from scripts.entity_utils import *
+from scirex_utilities.analyse_pwc_entity_results import *
+from scirex_utilities.entity_utils import *
 from spacy.tokens import Doc
 from tqdm import tqdm
 
@@ -527,9 +527,9 @@ def _annotation_to_dict(dc):
         return dc
 
 
-def annotations_to_jsonl(annotations, output_file):
+def annotations_to_jsonl(annotations, output_file, key="doc_id"):
     with open(output_file, "w") as of:
-        for ann in sorted(annotations, key=lambda x: x["doc_id"]):
+        for ann in sorted(annotations, key=lambda x: x[key]):
             as_json = _annotation_to_dict(ann)
             as_str = json.dumps(as_json, sort_keys=True)
             of.write(as_str)

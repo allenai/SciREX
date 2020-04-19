@@ -6,11 +6,11 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-from scirex.training.f1 import compute_f1
+from scirex.metrics.f1 import compute_f1
 from scirex.commands.utils import map_predicted_spans_to_gold, span_match
 from itertools import product, combinations
 
-from scripts.entity_utils import used_entities
+from scirex_utilities.entity_utils import used_entities
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--test-file")
@@ -242,7 +242,7 @@ def generate_metrics_for_ner(documents):
     return metrics
 
 
-from scirex.training.cluster_metrics import match_predicted_clusters_to_gold
+from scirex.metrics.cluster_metrics import match_predicted_clusters_to_gold
 
 
 def generate_metrics_for_cluster(documents):

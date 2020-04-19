@@ -51,7 +51,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
             gold_ner: List[Dict[Tuple[int, int], str]] = output_ner["gold_ner"]
 
             metadata = output_ner["metadata"]
-            doc_ids: List[str] = [m["doc_key"] for m in metadata]
+            doc_ids: List[str] = [m["doc_id"] for m in metadata]
             assert len(set(doc_ids)) == 1
             para_ids: List[int] = [m["sentence_num"] for m in metadata]
             para_starts: List[int] = [int(m["start_pos_in_doc"]) for m in metadata]
