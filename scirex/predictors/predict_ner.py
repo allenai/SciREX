@@ -5,7 +5,6 @@ import os
 from sys import argv
 from typing import Dict, List, Tuple
 
-import numpy as np
 from tqdm import tqdm
 
 from allennlp.common.util import import_submodules
@@ -13,6 +12,8 @@ from allennlp.data import DataIterator, DatasetReader
 from allennlp.data.dataset import Batch
 from allennlp.models.archival import load_archive
 from allennlp.nn import util as nn_util
+
+from scirex_utilities.json_utilities import NumpyEncoder
 
 import logging
 
@@ -46,18 +47,17 @@ def predict(archive_folder, test_file, output_file, cuda_device):
             batch = nn_util.move_to_device(batch, cuda_device)  # Put on GPU.
 
             output_embedding = model.embedding_forward(batch["text"])
-            output_ner = model.ner_forward(output_embedding, batch["ner_entity_labels"], batch["metadata"])
+            output_ner = model.ner_forward(output_embedding, batch["ner_type_labels"], batch["metadata"])
             predicted_ner: List[Dict[Tuple[int, int], str]] = output_ner["decoded_ner"]
-            gold_ner: List[Dict[Tuple[int, int], str]] = output_ner["gold_ner"]
 
             metadata = output_ner["metadata"]
             doc_ids: List[str] = [m["doc_id"] for m in metadata]
             assert len(set(doc_ids)) == 1
-            para_ids: List[int] = [m["sentence_num"] for m in metadata]
+            para_ids: List[int] = [m["paragraph_num"] for m in metadata]
             para_starts: List[int] = [int(m["start_pos_in_doc"]) for m in metadata]
             para_ends: List[int] = [int(m["end_pos_in_doc"]) for m in metadata]
             sentence_indices: List[List[Tuple[int, int]]] = [m["sentence_indices"] for m in metadata]
-            words: List[str] = [m["sentence"] for m in metadata]
+            words: List[str] = [m["paragraph"] for m in metadata]
 
             for s, e, sents in zip(para_starts, para_ends, sentence_indices):
                 assert s == sents[0][0], breakpoint()
@@ -75,13 +75,12 @@ def predict(archive_folder, test_file, output_file, cuda_device):
                 res["para_end"] = para_ends[i]
                 res["words"] = words[i]
                 res["sentence_indices"] = sentence_indices[i]
-                res["prediction"] = [{"span": k, "label": v.split("_")[1]} for k, v in predicted_ner[i].items()]
-                res["gold"] = [{"span": k, "label": v.split("_")[1]} for k, v in gold_ner[i].items()]
+                res["prediction"] = [(k[0], k[1], v) for k, v in predicted_ner[i].items()]
                 documents[doc_ids[i]].append(res)
 
         documents = process_documents(documents)
 
-        f.write("\n".join([json.dumps(x) for x in documents.values()]))
+        f.write("\n".join([json.dumps(x, cls=NumpyEncoder) for x in documents.values()]))
 
 
 def process_documents(documents):
@@ -95,23 +94,16 @@ def process_documents(documents):
         paragraphs = [[x["para_start"], x["para_end"]] for x in v]
         paragraph_sentences = [s for x in v for s in x["sentence_indices"]]
         predictions = [
-            {"span": (e["span"][0] + x["para_start"], e["span"][1] + x["para_start"]), "label": e["label"]}
+            (s + x["para_start"], e + x["para_start"], l)
             for x in v
-            for e in x["prediction"]
-        ]
-
-        golds = [
-            {"span": (e["span"][0] + x["para_start"], e["span"][1] + x["para_start"]), "label": e["label"]}
-            for x in v
-            for e in x["gold"]
+            for (s, e, l) in x["prediction"]
         ]
 
         documents[k] = {
             "words": words,
             "sections": paragraphs,
             "sentences": paragraph_sentences,
-            "prediction": predictions,
-            "gold": golds,
+            "ner": predictions,
             "doc_id": k,
         }
 

@@ -6,11 +6,11 @@ import json
 logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=logging.INFO)
 logging.info("Loading Allennlp Modules")
 
-from scirex.commands.predict_ner import predict as predict_ner
-from scirex.commands.predict_coref import predict as predict_coref
-from scirex.commands.predict_clusters import predict as predict_clusters
-from scirex.commands.predict_n_ary_relations import predict as predict_n_ary_relations
-from scirex.commands.predict_links import predict as predict_links
+from scirex.predictors.predict_ner import predict as predict_ner
+from scirex.predictors.predict_pairwise_coreference import predict as predict_coref
+from scirex.predictors.predict_clusters import predict as predict_clusters
+from scirex.predictors.predict_n_ary_relations import predict as predict_n_ary_relations
+from scirex.predictors.predict_links import predict as predict_links
 
 logging.info("Loaded Allennlp Modules")
 

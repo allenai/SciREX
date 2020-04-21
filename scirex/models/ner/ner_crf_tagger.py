@@ -2,16 +2,15 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from allennlp.data import Vocabulary
-from allennlp.data.dataset_readers.dataset_utils.span_utils import \
-    bioul_tags_to_spans
+from allennlp.data.dataset_readers.dataset_utils.span_utils import bioul_tags_to_spans
 from allennlp.models.model import Model
-from allennlp.modules import (ConditionalRandomField, FeedForward,
-                              TimeDistributed)
+from allennlp.modules import ConditionalRandomField, FeedForward, TimeDistributed
 from allennlp.modules.conditional_random_field import allowed_transitions
 from allennlp.nn import InitializerApplicator, RegularizerApplicator
 from overrides import overrides
 
 from scirex.metrics.span_f1_metrics import SpanBasedF1Measure
+from allennlp.training.metrics.span_based_f1_measure import SpanBasedF1Measure as SpanBasedF1MeasureAllennlp
 
 
 class NERTagger(Model):
@@ -21,6 +20,7 @@ class NERTagger(Model):
         mention_feedforward: FeedForward,
         label_namespace: str = "ner_type_labels",
         label_encoding: str = "BIOUL",
+        exact_match: bool = False,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None,
     ) -> None:
@@ -45,7 +45,12 @@ class NERTagger(Model):
             self._n_labels, constraints, include_start_end_transitions=False
         )
 
-        self._ner_metrics = SpanBasedF1Measure(self.label_map, label_encoding=label_encoding)
+        if exact_match:
+            self._ner_metrics = SpanBasedF1Measure(self.label_map, label_encoding=label_encoding)
+        else:
+            self._ner_metrics = SpanBasedF1MeasureAllennlp(
+                vocabulary=vocab, tag_namespace=label_namespace, label_encoding=label_encoding
+            )
 
         initializer(self)
 
@@ -124,12 +129,12 @@ class NERTagger(Model):
 
         for spans in predicted_spans:
             for _ in range(max_spans_count - len(spans)):
-                spans.append((-1, -1, "Entity_Method"))
+                spans.append((-1, -1, "Method"))
 
         spans_lists = [[span[:2] for span in spans] for spans in predicted_spans]
         entity_label_map = self._vocab.get_token_to_index_vocabulary("span_type_labels")
         span_labels_lists = [
-            [entity_label_map[span[2].split("_")[1]] for span in spans] for spans in predicted_spans
+            [entity_label_map[span[2]] for span in spans] for spans in predicted_spans
         ]
 
         output_dict["spans"] = torch.LongTensor(spans_lists)

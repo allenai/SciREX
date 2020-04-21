@@ -226,14 +226,6 @@ class ScirexModel(Model):
                 metadata=metadata,
             )
 
-            if saliency_threshold is not None:
-                # Keep only clusters with saliency entities
-                ner_probs = output_saliency["ner_probs"].squeeze(0)
-                ner_probs = (ner_probs > saliency_threshold).long()
-
-                clusters_to_keep = (span_cluster_labels * ner_probs[:, :, None]).sum(0).sum(0)
-                output_saliency["clusters_to_keep"] = clusters_to_keep.cpu().data.numpy()
-
         return output_saliency
 
     def relation_forward(self, output_span_embedding, metadata, relation_to_cluster_ids, span_cluster_labels):
@@ -464,7 +456,7 @@ class ScirexModel(Model):
         )
 
         all_metrics["validation_metric"] = (
-            self._loss_weights["ner"] * nan_to_zero(metrics_ner.get("ner_1_f1-measure", 0))
+            self._loss_weights["ner"] * nan_to_zero(metrics_ner.get("ner_f1-measure", 0))
             + self._loss_weights["saliency"] * nan_to_zero(metrics_saliency.get("span_f1", 0))
             + self._loss_weights["n_ary_relation"]
             * nan_to_zero(metrics_n_ary.get("n_ary_rel_global_macro-avg.f1-score", 0))

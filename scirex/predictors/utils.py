@@ -1,6 +1,3 @@
-from collections import defaultdict
-
-
 def span_match(span_1, span_2):
     sa, ea = span_1
     sb, eb = span_2
@@ -8,22 +5,12 @@ def span_match(span_1, span_2):
     return iou
 
 
-def map_predicted_spans_to_gold(predicted_spans, gold_spans):
-    typed_predicted_spans = defaultdict(list)
-    typed_gold_spans = defaultdict(list)
+def map_predicted_spans_to_gold(predicted_spans: List[tuple], gold_spans: List[tuple]):
+    predicted_to_gold: Dict[tuple, tuple] = {}
 
-    for span, label in predicted_spans.items():
-        typed_predicted_spans[label].append(span)
-
-    for span, label in gold_spans.items():
-        typed_gold_spans[label].append(span)
-
-    predicted_to_gold = {}
-
-    for p, label in predicted_spans.items():
-        gold = typed_gold_spans[label]
+    for p in predicted_spans:
         predicted_to_gold[p] = p
-        for g in gold:
+        for g in gold_spans:
             if span_match(p, g) > 0.5:
                 predicted_to_gold[p] = g
                 break
@@ -74,6 +61,9 @@ def map_and_intersect_predicted_clusters_to_gold(
 def convert_ner_to_dict(ner: Tuple[int, int, str]) :
     return {(x[0], x[1]):x[2] for x in ner}
 
-def convert_ner_to_list(ner: Dict[Tuple[int, int], str]) :
+def convert_ner_to_typed_list(ner: Dict[Tuple[int, int], str]) :
     return [(k[0], k[1], v) for k, v in ner.items()]
+
+def convert_ner_to_list(ner) :
+    return list(set([tuple(span[0], span[1]) for span in ner]))
 

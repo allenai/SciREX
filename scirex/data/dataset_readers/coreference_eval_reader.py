@@ -1,7 +1,7 @@
 import json
 import logging
 from itertools import combinations
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import MetadataField, TextField
@@ -44,7 +44,7 @@ class ScirexCoreferenceEvalReader(DatasetReader):
                 ins = json.loads(line)
                 if self._field not in ins:
                     continue
-                entities = [(x["span"][0], x["span"][1], x["label"].split("_")[0]) for x in ins[self._field]]
+                entities: Tuple[int, int, str] = ins[self._field]
                 words = ins["words"]
                 for e1, e2 in combinations(entities, 2):
                     w1 = " ".join(words[e1[0] : e1[1]])

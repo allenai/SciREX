@@ -36,10 +36,10 @@ def clean_json_dict(json_dict):
 
     clusters_dict: Dict[ClusterName, List[Span]] = {
         cluster_name: sorted(list(set([tuple(x) for x in spans])))
-        for cluster_name, spans in json_dict["coref"].items()
+        for cluster_name, spans in json_dict.get('coref', dict()).items()
     }
 
-    n_ary_relations: List[Dict[BaseEntityType, ClusterName]] = [x for x in json_dict["n_ary_relations"]]
+    n_ary_relations: List[Dict[BaseEntityType, ClusterName]] = [x for x in json_dict.get("n_ary_relations", list())]
     existing_entities = set([v for relation in n_ary_relations for k, v in relation.items()])
 
     cluster_to_type: Dict[ClusterName, BaseEntityType] = {}

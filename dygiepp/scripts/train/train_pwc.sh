@@ -4,7 +4,7 @@
 
 experiment_name="scirex_data"
 data_root="../model_data/release_data_in_scierc_format/"
-config_file="./training_config/scierc_working_example.jsonnet"
+config_file="./training_config/scirex_working_example.jsonnet"
 cuda_device=$1
 
 # Train model.

@@ -80,6 +80,7 @@ function(p) {
       ner: {
         mention_feedforward: make_feedforward(context_encoder_dim),
         label_encoding: 'BIOUL',
+        exact_match: p.exact_match
       },
       relation: {
         antecedent_feedforward: make_feedforward(3*featured_embedding_dim),

@@ -15,6 +15,7 @@ local params = {
     n_ary_relation: std.extVar('rw')
   },
   relation_cardinality: std.parseInt(std.extVar('relation_cardinality')),
+  exact_match: std.extVar('em')
 };
 
 template(params)

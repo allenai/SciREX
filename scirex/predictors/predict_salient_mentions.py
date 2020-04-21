@@ -1,11 +1,10 @@
 #! /usr/bin/env python
-from collections import defaultdict
+
 import json
 import os
 from sys import argv
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-import numpy as np
 from tqdm import tqdm
 
 from allennlp.common.util import import_submodules
@@ -19,6 +18,14 @@ logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=loggin
 
 
 def predict(archive_folder, test_file, output_file, cuda_device):
+    '''
+    test_file contains atleast - doc_id, sections, sentences, ner in scirex format.
+
+    output_file - {
+        'doc_id' : str,
+        'saliency' : Tuple[start_index, end_index, salient (binary), saliency probability]
+    }
+    '''
     import_submodules("scirex")
     logging.info("Loading Model from %s", archive_folder)
     archive_file = os.path.join(archive_folder, "model.tar.gz")
@@ -26,7 +33,7 @@ def predict(archive_folder, test_file, output_file, cuda_device):
     model = archive.model
     model.eval()
 
-    link_threshold = json.load(open(archive_folder + '/metrics.json'))['best_validation__span_threshold']
+    saliency_threshold = json.load(open(archive_folder + '/metrics.json'))['best_validation__span_threshold']
 
     model.prediction_mode = True
     config = archive.config.duplicate()
@@ -42,37 +49,28 @@ def predict(archive_folder, test_file, output_file, cuda_device):
     data_iterator = DataIterator.from_params(config["validation_iterator"])
     iterator = data_iterator(instances, num_epochs=1, shuffle=False)
 
-    with open(output_file, "w") as f, open(test_file + '.linked_ss', "w") as g:
+    with open(output_file, "w") as f:
         documents = {}
         for batch in tqdm(iterator):
             batch = nn_util.move_to_device(batch, cuda_device)  # Put on GPU.
-            output_res = model.decode_links(batch, link_threshold)
+            output_res = model.decode_saliency(batch, saliency_threshold)
 
-            cluster_size = output_res['clusters_size']
-            metadata = output_res['linked']['metadata'][0]
-            doc_id = metadata['doc_id']
-            coref_key_map = {k:i for i, k in metadata['document_metadata']['cluster_name_to_id'].items()}
+            metadata = output_res['metadata']
+            doc_ids: List[str] = [m["doc_id"] for m in metadata]
+            assert len(set(doc_ids)) == 1
 
-            linked_clusters = {coref_key_map[i]:int(c) for i, c in enumerate(cluster_size)}
+            decoded_spans: Dict[tuple, float] = output_res['decoded_spans']
+            doc_id = output_res[0]['metadata']['doc_id']
+
             if doc_id not in documents :
                 documents[doc_id] = {}
-                documents[doc_id]['linked_clusters'] = {k:0 for k in metadata['document_metadata']['cluster_name_to_id']}
+                documents[doc_id]['saliency'] = []
                 documents[doc_id]['doc_id'] = doc_id
-                
 
-            for k, c in linked_clusters.items() :
-                documents[doc_id]['linked_clusters'][k] += c
-
-        original_documents = [json.loads(line) for line in open(test_file)]
-        for d in original_documents :
-            assert d['doc_id'] in documents
-            try :
-                d['coref'] = {k:v for k, v in d['coref'].items() if documents[d['doc_id']]['linked_clusters'][k] > 0}
-            except :
-                breakpoint()
+            for span, prob in decoded_spans.items() :
+                documents[doc_id]['saliency'].append([span[0], span[1], 1 if prob > saliency_threshold else 0, prob])
 
         f.write("\n".join([json.dumps(x) for x in documents.values()]))
-        g.write("\n".join([json.dumps(x) for x in original_documents]))
 
 
 def main():

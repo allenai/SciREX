@@ -77,14 +77,11 @@ class ScirexCoreferenceTrainReader(DatasetReader):
                     )
 
                     if w1.lower() == w2.lower() or len(cluster_labels_1 & cluster_labels_2) > 0:
-                        gold_label = "Entailment"
+                        gold_label = 1
                     elif len(cluster_labels_1) == 0 and len(cluster_labels_2) == 0:
-                        gold_label = "-"
-                    elif len(cluster_labels_1 & cluster_labels_2) == 0:
-                        gold_label = "Contradiction"
-
-                    if gold_label == "-":
                         continue
+                    elif len(cluster_labels_1 & cluster_labels_2) == 0:
+                        gold_label = 0
 
                     pairs.append((type_1 + " " + w1, type_2 + " " + w2, gold_label))
         return pairs
@@ -94,7 +91,7 @@ class ScirexCoreferenceTrainReader(DatasetReader):
         self,  # type: ignore
         premise: str,
         hypothesis: str,
-        label: str = None,
+        label: int,
         prob: float = None,
     ) -> Instance:
         fields: Dict[str, Field] = {}
@@ -104,8 +101,8 @@ class ScirexCoreferenceTrainReader(DatasetReader):
         fields["tokens"] = TextField(
             [Token("[CLS]")] + premise_tokens + [Token("[SEP]")] + hypothesis_tokens, self._token_indexers
         )
-        if label:
-            fields["label"] = LabelField(label)
+        
+        fields["label"] = LabelField(label, skip_indexing=True)
 
         metadata = {
             "premise_tokens": [x.text for x in premise_tokens],
