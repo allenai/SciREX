@@ -12,32 +12,18 @@ class NAryRelationMetrics(Metric):
         self.reset()
 
     @overrides
-    def __call__(
-        self,
-        candidate_relation_list,
-        candidate_relation_labels,
-        candidate_relation_scores,
-        doc_id,
-    ):
+    def __call__(self, candidate_relation_list, candidate_relation_labels, candidate_relation_scores, doc_id):
         try:
-            candidate_relation_scores, = self.unwrap_to_tensors(
-                candidate_relation_scores
-            )
+            candidate_relation_scores, = self.unwrap_to_tensors(candidate_relation_scores)
             candidate_relation_scores = list(candidate_relation_scores.numpy())
         except:
             breakpoint()
 
-        assert len(candidate_relation_list) == len(
-            candidate_relation_scores
-        ), breakpoint()
-        assert len(candidate_relation_labels) == len(
-            candidate_relation_scores
-        ), breakpoint()
+        assert len(candidate_relation_list) == len(candidate_relation_scores), breakpoint()
+        assert len(candidate_relation_labels) == len(candidate_relation_scores), breakpoint()
 
         for relation, label, score in zip(
-            candidate_relation_list,
-            candidate_relation_labels,
-            candidate_relation_scores,
+            candidate_relation_list, candidate_relation_labels, candidate_relation_scores
         ):
             relation = (doc_id, tuple(relation))
             if relation not in self._candidate_labels:
@@ -45,10 +31,7 @@ class NAryRelationMetrics(Metric):
 
             assert self._candidate_labels[relation] == label
 
-            if (
-                relation not in self._candidate_scores
-                or self._candidate_scores[relation] < score
-            ):
+            if relation not in self._candidate_scores or self._candidate_scores[relation] < score:
                 self._candidate_scores[relation] = score
 
     @overrides
@@ -61,14 +44,11 @@ class NAryRelationMetrics(Metric):
             prediction_scores.append(self._candidate_scores[k])
             gold.append(self._candidate_labels[k])
 
-        try :
+        try:
             threshold = compute_threshold(prediction_scores, gold)
-        except :
+        except:
             breakpoint()
-        prediction = [
-            1 if self._candidate_scores[k] > threshold else 0
-            for k in self._candidate_labels
-        ]
+        prediction = [1 if self._candidate_scores[k] > threshold else 0 for k in self._candidate_labels]
 
         try:
             metrics = pd.io.json.json_normalize(

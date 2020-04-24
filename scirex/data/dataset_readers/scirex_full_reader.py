@@ -21,6 +21,8 @@ from scirex.data.utils.section_feature_extraction import extract_sentence_featur
 from scirex.data.utils.span_utils import does_overlap, is_x_in_y, spans_to_bio_tags
 from scirex_utilities.entity_utils import used_entities
 
+from scipy.stats import mode
+
 Span = Tuple[int, int]  # eg. (0, 10)
 ClusterName = str
 BaseEntityType = str  # eg. Method
@@ -184,10 +186,8 @@ class ScirexFullReader(DatasetReader):
 
                 for cluster_name in corefs:
                     types = [entities[span][0] for span in corefs[cluster_name]]
-                    if len(set(types)) > 1:
-                        print(json_dict["doc_id"])
-                    if len(set(types)) == 1:
-                        type_to_cluster_ids[types[0]].append(cluster_name_to_id[cluster_name])
+                    if len(set(types)) > 0:
+                        type_to_cluster_ids[mode(types)[0][0]].append(cluster_name_to_id[cluster_name])
 
                 # Map relations to list of cluster ids in it.
                 relation_to_cluster_ids: Dict[int, List[int]] = {}

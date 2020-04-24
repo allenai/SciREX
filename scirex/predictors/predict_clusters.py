@@ -1,5 +1,7 @@
 import json
-from scirex.models.global_analysis.clustering import do_clustering
+from scirex.models.clustering.clustering import do_clustering
+import tqdm
+import sys
 
 
 def predict(coreference_scores_file, output_file, coreference_threshold):
@@ -17,7 +19,7 @@ def predict(coreference_scores_file, output_file, coreference_threshold):
         'clusters' : Dict[str, List[Tuple[int, int]]]
     }
     '''
-    documents = [json.loads(line) for line in open(coreference_scores_file)]
+    documents = [json.loads(line) for line in tqdm.tqdm(open(coreference_scores_file))]
     for doc in documents:
         doc["spans"] = sorted(
             list(
@@ -29,7 +31,7 @@ def predict(coreference_scores_file, output_file, coreference_threshold):
         )
 
     cluster_outputs = []
-    for doc in documents:
+    for doc in tqdm.tqdm(documents):
         clusters = do_clustering(
             doc, "spans", "pairwise_coreference_scores", plot=True, threshold=coreference_threshold
         )
@@ -39,3 +41,6 @@ def predict(coreference_scores_file, output_file, coreference_threshold):
 
     with open(output_file, "w") as f:
         f.write("\n".join([json.dumps(line) for line in cluster_outputs]))
+
+if __name__ == '__main__' :
+    predict(sys.argv[1], sys.argv[2], float(sys.argv[3]))

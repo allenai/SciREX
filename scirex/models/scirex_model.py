@@ -378,13 +378,9 @@ class ScirexModel(Model):
             saliency_threshold=saliency_threshold,
         )
 
-        res = {}
-        res["saliency"] = self._saliency_classifier.decode(output_saliency)
-        res["clusters_size"] = output_saliency["clusters_to_keep"]
+        return self._saliency_classifier.decode(output_saliency)
 
-        return res
-
-    def decode_relations(self, batch, saliency_threshold):
+    def decode_relations(self, batch):
         output_embedding = self.embedding_forward(text=batch["text"])
         output_span_embedding = self.span_embeddings_forward(
             output_embedding=output_embedding,

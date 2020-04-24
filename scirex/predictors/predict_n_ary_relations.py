@@ -4,23 +4,44 @@ import json
 import os
 from sys import argv
 from typing import Dict, List, Tuple
-
-import numpy as np
 from tqdm import tqdm
+
+import torch
 
 from allennlp.common.util import import_submodules
 from allennlp.data import DataIterator, DatasetReader
 from allennlp.data.dataset import Batch
 from allennlp.models.archival import load_archive
 from allennlp.nn import util as nn_util
+from scirex.predictors.utils import merge_method_subrelations
+
+from scirex_utilities.json_utilities import load_jsonl, annotations_to_jsonl
 
 import logging
 logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=logging.INFO)
 
+def combine_span_and_cluster_file(span_file, cluster_file) :
+    spans = load_jsonl(span_file)
+    clusters = {item['doc_id'] :  item for item in load_jsonl(cluster_file)}
 
-def predict(archive_folder, test_file, output_file, cuda_device):
-    link_threshold = json.load(open(archive_folder + '/metrics.json'))['best_validation__span_threshold']
-    relation_threshold = json.load(open(archive_folder + '/metrics_test.json'))['_n_ary_rel_global_threshold']
+    for doc in spans :
+        if 'clusters' in clusters[doc['doc_id']] :
+            doc['coref'] = clusters[doc['doc_id']]['clusters']
+        else :
+            merge_method_subrelations(doc)
+            doc['coref'] = {x: v for x, v in clusters[doc['doc_id']]['coref'].items() if len(v) > 0}
+
+        if 'n_ary_relations' in doc:
+            del doc['n_ary_relations']
+
+    annotations_to_jsonl(spans, 'tmp_relation.jsonl')
+
+
+def predict(archive_folder, span_file, cluster_file, output_file, cuda_device):
+    combine_span_and_cluster_file(span_file, cluster_file)
+
+    test_file = 'tmp_relation.jsonl'
+    relation_threshold = json.load(open(archive_folder + '/metrics.json'))['best_validation__n_ary_rel_global_threshold']
     print(relation_threshold)
     
     import_submodules("scirex")
@@ -47,24 +68,10 @@ def predict(archive_folder, test_file, output_file, cuda_device):
     with open(output_file, "w") as f:
         documents = {}
         for batch in tqdm(iterator):
-            for key in batch :
-                try :
-                    if key == 'text' :
-                        for key_1 in batch[key] :
-                            try :
-                                batch[key][key_1] = nn_util.move_to_device(batch[key][key_1], cuda_device)
-                            except :
-                                print(key_1)
-                                breakpoint()
-                    else :
-                        batch[key] = nn_util.move_to_device(batch[key], cuda_device)
-                except :
-                    print(key)
-                    breakpoint()
-            # batch =   # Put on GPU.
-            output_res = model.decode_relations(batch, link_threshold)
+            with torch.no_grad() :
+                batch = nn_util.move_to_device(batch, cuda_device)
+                output_res = model.decode_relations(batch)
 
-            # linked_spans : Dict[(int, int), str] = output_res['linked']['decoded_spans']
             n_ary_relations = output_res['n_ary_relation']
             predicted_relations, scores = n_ary_relations['candidates'], n_ary_relations['scores']
 
@@ -76,22 +83,23 @@ def predict(archive_folder, test_file, output_file, cuda_device):
                 predicted_relations[i] = tuple([coref_key_map[k] if k in coref_key_map else None for k in rel])
 
             if doc_id not in documents :
-                documents[doc_id] = {'predicted_relations' : [], 'scores' : [], 'doc_id' : doc_id, "linked_clusters" : [], 'is_true' :[]}
+                documents[doc_id] = {'predicted_relations' : [], 'doc_id' : doc_id}
 
-            documents[doc_id]['predicted_relations'] += predicted_relations
-            documents[doc_id]['scores'] += [round(float(x), 4) for x in list(scores.ravel())]
-            documents[doc_id]['is_true'] += [1 if x > relation_threshold else 0 for x in list(scores.ravel())]
+            label = [1 if x > relation_threshold else 0 for x in list(scores.ravel())]
+            scores = [round(float(x), 4) for x in list(scores.ravel())]
+            documents[doc_id]['predicted_relations'] += list(zip(predicted_relations, scores, label))
+
+        for d in documents.values() :
+            predicted_relations = {}
+            for r, s, l in d['predicted_relations'] :
+                r = tuple(r)
+                if r not in predicted_relations or predicted_relations[r][0] < s:
+                    predicted_relations[r] = (s, l)
+
+            d['predicted_relations'] = [(r, s, l) for r, (s, l) in predicted_relations.items()]
 
         f.write("\n".join([json.dumps(x) for x in documents.values()]))
 
 
-def main():
-    archive_folder = argv[1]
-    test_file = argv[2]
-    output_file = argv[3]
-    cuda_device = int(argv[4])
-    predict(archive_folder, test_file, output_file, cuda_device)
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__' :
+    predict(argv[1], argv[2], argv[3], argv[4], int(argv[5]))

@@ -50,14 +50,14 @@ class ScirexCoreferenceEvalReader(DatasetReader):
                     w1 = " ".join(words[e1[0] : e1[1]])
                     w2 = " ".join(words[e2[0] : e2[1]])
                     t1, t2 = e1[2], e2[2]
-                    if t1 == t2:
+                    if t1 == t2 or w1.lower() == w2.lower():
                         metadata = {
                             "span_premise": e1,
                             "span_hypothesis": e2,
                             "doc_id": ins["doc_id"],
                             "field": self._field,
                         }
-                        pairs.append((t1 + " " + w1, t2 + " " + w2, metadata))
+                        pairs.append((t1 + " " + w1, t1 + " " + w2, metadata))
 
         print(len(pairs))
 
