@@ -1,20 +1,15 @@
 import logging
-import math
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Dict, List, Optional
 import torch
 import torch.nn.functional as F
 from overrides import overrides
 
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
-from allennlp.modules.token_embedders import Embedding
 from allennlp.modules import FeedForward
 from allennlp.modules import TimeDistributed
-from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
+from allennlp.nn import InitializerApplicator, RegularizerApplicator
 from scirex.metrics.thresholding_f1_metric import BinaryThresholdF1
-
-from scirex.models import shared
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
