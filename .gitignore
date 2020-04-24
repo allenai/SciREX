@@ -104,10 +104,20 @@ venv.bak/
 .mypy_cache/
 
 # data folders
-data
+raw_data
 outputs
 Testing.ipynb
 
 notebooks/Testbed*
 .vscode
-!dygie/data
+!scirex/data
+
+*.json
+*.tar.gz
+scibert/
+scirex_dataset/all_data
+scirex_dataset/release_data
+scirex_dataset/release_data_in_scierc_format
+!scirex_dataset/release_data.tar.gz
+
+src/
