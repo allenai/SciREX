@@ -17,9 +17,9 @@ function(p) {
   },
 
   local display_metrics = {
-    "ner": ["ner_precision", "ner_recall", "ner_f1"],
+    "ner": [],
     "rel": ["rel_precision", "rel_recall", "rel_f1", "rel_span_recall"],
-    "coref": ["coref_precision", "coref_recall", "coref_f1", "coref_mention_recall"],
+    "coref": [],
     "events": ["trig_class_f1", "arg_class_f1"]
   },
 
@@ -183,11 +183,11 @@ function(p) {
         dropout: 0.5
       },
       [if use_bert then "bert"]: {
-        type: "bert-pretrained",
+        type: "bert-pretrained-modified",
         pretrained_model: (if p.use_bert_base then "bert-base-cased"
                            else if p.use_bert_large then "bert-large-cased"
                            else "pretrained/scibert_scivocab_cased/weights.tar.gz"),
-        requires_grad: p.finetune_bert
+        requires_grad: p.bert_layers
       }
     }
   },
@@ -203,12 +203,11 @@ function(p) {
       input_dim: token_embedding_dim
     }
     else {
-      type: "stacked_bidirectional_lstm",
+      type: "lstm",
       input_size: token_embedding_dim,
       hidden_size: p.lstm_hidden_size,
-      num_layers: p.lstm_n_layers,
-      recurrent_dropout_probability: p.lstm_dropout,
-      layer_dropout_probability: p.lstm_dropout
+      // num_layers: p.lstm_n_layers,
+      bidirectional: true
     }
   ),
 

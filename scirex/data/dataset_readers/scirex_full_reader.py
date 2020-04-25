@@ -187,7 +187,11 @@ class ScirexFullReader(DatasetReader):
                 for cluster_name in corefs:
                     types = [entities[span][0] for span in corefs[cluster_name]]
                     if len(set(types)) > 0:
-                        type_to_cluster_ids[mode(types)[0][0]].append(cluster_name_to_id[cluster_name])
+                        try :
+                            type_to_cluster_ids[mode(types)[0][0]].append(cluster_name_to_id[cluster_name])
+                        except :
+                            # SciERC gives trouble here. Not relevant .
+                            continue
 
                 # Map relations to list of cluster ids in it.
                 relation_to_cluster_ids: Dict[int, List[int]] = {}

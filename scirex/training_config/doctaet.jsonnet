@@ -17,7 +17,7 @@
     type: "doctaet",
       bert_model: {
           pretrained_model: std.extVar("BERT_WEIGHTS"),
-          requires_grad : "pooler,10,11"
+          requires_grad : "pooler,11"
       },
       aggregate_feedforward: {
         input_dim: 768,

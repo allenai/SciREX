@@ -148,8 +148,10 @@ class IEJsonReader(DatasetReader):
         if self._debug:
             lines = lines[:self._n_debug_docs]
 
-        for line in tqdm(lines):
+        for _, line in enumerate(tqdm(lines)):
             # Loop over the documents.
+            # if 'train' in file_path and _ > 20 :
+            #     break
             sentence_start = 0
             js = json.loads(line)
             doc_key = js["doc_key"]
@@ -311,7 +313,7 @@ class IEJsonReader(DatasetReader):
     @overrides
     def _instances_from_cache_file(self, cache_filename):
         with open(cache_filename, "rb") as f:
-            for entry in pkl.load(f):
+            for _, entry in enumerate(pkl.load(f)):
                 yield entry
 
     @overrides

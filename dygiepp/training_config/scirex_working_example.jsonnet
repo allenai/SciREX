@@ -26,7 +26,8 @@ local params = {
   use_bert_base: false,
   use_bert_large: false,
   use_scibert: true,
-  finetune_bert: true,
+  finetune_bert: false,
+  bert_layers: "11,pooler",
   rel_prop: 0,
   coref_prop: 1,
   context_width: 1,
@@ -69,7 +70,7 @@ local params = {
   events_positive_label_weight: 1.0,
 
   // Model training
-  batch_size: 8,
+  batch_size: 4,
   num_epochs: 20,
   patience: 15,
   optimizer: {

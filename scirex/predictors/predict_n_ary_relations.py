@@ -34,13 +34,13 @@ def combine_span_and_cluster_file(span_file, cluster_file) :
         if 'n_ary_relations' in doc:
             del doc['n_ary_relations']
 
-    annotations_to_jsonl(spans, 'tmp_relation.jsonl')
+    annotations_to_jsonl(spans, 'tmp_relation_42424242.jsonl')
 
 
 def predict(archive_folder, span_file, cluster_file, output_file, cuda_device):
     combine_span_and_cluster_file(span_file, cluster_file)
 
-    test_file = 'tmp_relation.jsonl'
+    test_file = 'tmp_relation_42424242.jsonl'
     relation_threshold = json.load(open(archive_folder + '/metrics.json'))['best_validation__n_ary_rel_global_threshold']
     print(relation_threshold)
     

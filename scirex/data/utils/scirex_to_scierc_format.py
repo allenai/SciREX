@@ -36,7 +36,7 @@ def convert_scirex_instance_to_scierc_format(instance) :
     clusters = [[] for _ in range(num_clusters)]
 
     for span, cluster_ids in span_to_cluster_ids.items() :
-        span = (span[0] - start_ix, span[0] - end_ix)
+        span = (span[0] - start_ix, span[1] - start_ix)
         if span in mentions and len(cluster_ids) > 0:
             clusters[cluster_ids[0]].append(span)
 
@@ -73,11 +73,15 @@ def convert_scirex_to_scierc_format(file, output_file) :
         scierc_data.append(convert_scirex_instance_to_scierc_format(instance))
 
     num_relations = 0
+    num_clusters = 0
     for instance in scierc_data :
         for sentence in instance['relations'] :
             num_relations += len(sentence)
 
+        num_clusters += len(instance['clusters'])
+
     print(f"Writing to {output_file} {len(scierc_data)} instances")
+    print(f"Num clusters = {num_clusters} , Num Relations = {num_relations}")
     annotations_to_jsonl(scierc_data, output_file, 'doc_key')
 
 if __name__ == "__main__":
