@@ -54,7 +54,8 @@ def clustering_metrics(gold_data, predicted_clusters, span_map):
         all_metrics.append(metrics)
 
     all_metrics = pd.DataFrame(all_metrics)
-    print(all_metrics.describe())
+    print("Salient Clustering Metrics")
+    print(all_metrics.describe().loc['mean'])
 
     return mappings
 
@@ -142,7 +143,8 @@ def main(args):
                     all_metrics.append(metrics)
 
         all_metrics = pd.DataFrame(all_metrics)
-        print(all_metrics.describe())
+        print(f"Relation Metrics n={n}")
+        print(all_metrics.describe().loc['mean'])
 
 
 if __name__ == "__main__":

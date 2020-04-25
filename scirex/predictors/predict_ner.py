@@ -111,6 +111,7 @@ def process_documents(documents):
 
 
 def main():
+    print(argv)
     archive_folder = argv[1]
     test_file = argv[2]
     output_file = argv[3]

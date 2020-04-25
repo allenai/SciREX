@@ -25,8 +25,8 @@ def compute_threshold(predicted_scores: np.ndarray, gold: np.ndarray, bins: int 
     for threshold in np.linspace(0.001, 0.999, bins):
         predicted = (predicted_scores > threshold).astype(int)
         metrics = classification_report(gold, predicted, output_dict=True)
-        if metrics["macro avg"]["f1-score"] > best_value:
-            best_value = metrics["macro avg"]["f1-score"]
+        if metrics["1"]["f1-score"] > best_value:
+            best_value = metrics["1"]["f1-score"]
             best_threshold = threshold
 
     return best_threshold

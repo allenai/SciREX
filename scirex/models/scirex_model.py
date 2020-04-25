@@ -245,11 +245,7 @@ class ScirexModel(Model):
                 relation_to_cluster_ids = metadata[0]["document_metadata"]["relation_to_cluster_ids"]
                 span_cluster_labels = span_cluster_labels[:, :, :n_salient_clusters]
 
-                self._cluster_n_ary_relation.ignore_empty_clusters = True
-
                 output_n_ary_relation = self._cluster_n_ary_relation.compute_representations(
-                    spans=spans,
-                    span_mask=span_mask,
                     span_embeddings=featured_span_embeddings,
                     coref_labels=span_cluster_labels,
                     type_to_cluster_ids=type_to_cluster_ids,
@@ -266,7 +262,6 @@ class ScirexModel(Model):
         span_saliency_labels,
         relation_to_cluster_ids,
         span_cluster_labels,
-        saliency_threshold=None,
     ):
         output_saliency = {"loss": 0.0}
         output_n_ary_relation = {"loss": 0.0}
@@ -288,22 +283,11 @@ class ScirexModel(Model):
                 metadata=metadata,
             )
 
-            if saliency_threshold is not None:
-                # Keep only clusters with saliency entities
-                ner_probs = output_saliency["ner_probs"].squeeze(0)
-                ner_probs = (ner_probs > saliency_threshold).long()
-
-                clusters_to_keep = (span_cluster_labels * ner_probs[:, :, None]).sum(0).sum(0) == 0
-                span_cluster_labels[:, :, clusters_to_keep] = 0
-                self._cluster_n_ary_relation.ignore_empty_clusters = True
-
             if relation_to_cluster_ids is not None or self.prediction_mode:
                 type_to_cluster_ids = metadata[0]["document_metadata"]["type_to_cluster_ids"]
                 relation_to_cluster_ids = metadata[0]["document_metadata"]["relation_to_cluster_ids"]
 
                 output_n_ary_relation = self._cluster_n_ary_relation.compute_representations(
-                    spans=spans,
-                    span_mask=span_mask,
                     span_embeddings=featured_span_embeddings,
                     coref_labels=span_cluster_labels,
                     type_to_cluster_ids=type_to_cluster_ids,
@@ -390,8 +374,6 @@ class ScirexModel(Model):
             metadata=batch["metadata"],
         )
 
-        self._cluster_n_ary_relation.ignore_empty_clusters = True
-
         output_n_ary_relation = self.relation_forward(
             output_span_embedding=output_span_embedding,
             metadata=batch["metadata"],
@@ -401,27 +383,6 @@ class ScirexModel(Model):
 
         res = {}
         res["n_ary_relation"] = self._cluster_n_ary_relation.decode(output_n_ary_relation)
-
-        return res
-
-    def decode_saliency_clusters(self, batch):
-        output_embedding = self.embedding_forward(text=batch["text"])
-        output_span_embedding = self.span_embeddings_forward(
-            output_embedding=output_embedding,
-            spans=batch["spans"],
-            span_type_labels=batch["span_type_labels"],
-            span_features=batch["span_features"],
-            metadata=batch["metadata"],
-        )
-
-        output_cluster_saliency = self.cluster_saliency_forward(
-            output_span_embedding=output_span_embedding,
-            metadata=batch["metadata"],
-            span_cluster_labels=batch["span_cluster_labels"],
-        )
-
-        res = {}
-        res["cluster_saliency"] = self._cluster_classifier.decode(output_cluster_saliency)
 
         return res
 

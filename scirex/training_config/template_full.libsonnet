@@ -82,9 +82,6 @@ function(p) {
         label_encoding: 'BIOUL',
         exact_match: p.exact_match
       },
-      relation: {
-        antecedent_feedforward: make_feedforward(3*featured_embedding_dim),
-      },
       saliency_classifier: {
         mention_feedforward: make_feedforward(featured_embedding_dim),
         label_namespace: "span_saliency_labels",

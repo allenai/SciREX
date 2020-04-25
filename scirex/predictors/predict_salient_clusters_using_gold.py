@@ -6,10 +6,7 @@ from tqdm import tqdm
 import argparse
 import json
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--gold-file")
-parser.add_argument("--cluster-file")
-parser.add_argument("--output-file")
+import sys
 
 from scirex.predictors.utils import *
 from scirex_utilities.convert_brat_annotations_to_json import load_jsonl
@@ -48,7 +45,14 @@ def predict(clusters_file, gold_file, output_file):
                 if len(gold_c) > 0
             }
 
-            salient_clusters = {k: v for k, v in doc["clusters"].items() if k in intersection_scores and len(v) > 0}
+            gold_found = {}
+            for k, v in intersection_scores.items() :
+                if v not in gold_found :
+                    gold_found[v] = [k]
+                else :
+                    gold_found[v].append(k)
+
+            salient_clusters = {k: list(set([tuple(span) for c in v for span in doc['clusters'][c]])) for k, v in gold_found.items()}
 
             f.write(
                 json.dumps({"doc_id": doc["doc_id"], "clusters": salient_clusters, "spans": doc["spans"]})
@@ -56,10 +60,5 @@ def predict(clusters_file, gold_file, output_file):
             )
 
 
-def main(args):
-    predict(args.cluster_file, args.gold_file, args.output_file)
-
-
 if __name__ == "__main__":
-    args = parser.parse_args()
-    main(args)
+    predict(sys.argv[1], sys.argv[2], sys.argv[3])

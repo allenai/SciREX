@@ -187,8 +187,11 @@ class CorefResolver(Model):
 
     def collect_losses(self, output_docs):
         uniq_keys = [el for el in output_docs]
-        losses = torch.cat([entry["loss"].unsqueeze(0) for entry in output_docs.values()])
-        loss = torch.sum(losses)
+        if len(output_docs) == 0:
+            loss = 0.0
+        else :
+            losses  = torch.cat([entry["loss"].unsqueeze(0) for entry in output_docs.values()])
+            loss = torch.sum(losses)
 
         # At train time, return a separate output dict for each document.
         if self.training:

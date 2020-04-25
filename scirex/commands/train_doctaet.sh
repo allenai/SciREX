@@ -13,7 +13,7 @@ export CUDA_DEVICE=$CUDA_DEVICE
 
 export IS_LOWERCASE=true
 
-export DATA_BASE_PATH=model_data/release_data
+export DATA_BASE_PATH=scirex_dataset/release_data
 
 export TRAIN_PATH=$DATA_BASE_PATH/train.jsonl
 export DEV_PATH=$DATA_BASE_PATH/dev.jsonl

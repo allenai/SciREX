@@ -267,7 +267,10 @@ class DyGIE(Model):
                 spans, span_mask, span_embeddings, sentence_lengths, ner_labels, metadata)
 
         if self._loss_weights['coref'] > 0:
-            output_coref = self._coref.predict_labels(output_coref, metadata)
+            try :
+                output_coref = self._coref.predict_labels(output_coref, metadata)
+            except :
+                output_coref = {}
 
         if self._loss_weights['relation'] > 0:
             output_relation = self._relation.predict_labels(relation_labels, output_relation, metadata)
