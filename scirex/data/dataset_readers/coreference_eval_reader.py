@@ -7,7 +7,6 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import MetadataField, TextField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
-from allennlp.data.tokenizers import SpacyTokenizer as WordTokenizer
 from allennlp.data.tokenizers import Token, Tokenizer
 from overrides import overrides
 from tqdm import tqdm
@@ -26,7 +25,7 @@ class ScirexCoreferenceEvalReader(DatasetReader):
         super().__init__(lazy)
         self._field = field
         self.label_space = (0, 1)
-        self._tokenizer = tokenizer or WordTokenizer()
+        self._tokenizer = tokenizer
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
 
     @overrides
