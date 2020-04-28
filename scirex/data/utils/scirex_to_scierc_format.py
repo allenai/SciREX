@@ -12,6 +12,7 @@ from scirex_utilities.entity_utils import Relation, used_entities
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_dir', type=str, required=True)
 parser.add_argument('--output_dir', type=str, required=True)
+parser.add_argument("--abstract", action='store_true')
 
 def convert_scirex_instance_to_scierc_format(instance) :
     words = instance['paragraph']
@@ -65,11 +66,13 @@ def convert_scirex_instance_to_scierc_format(instance) :
     }
 
 
-def convert_scirex_to_scierc_format(file, output_file) :
+def convert_scirex_to_scierc_format(file, output_file, abstract) :
     scirex_reader = ScirexFullReader(to_scirex_converter=True)._read(file)
 
     scierc_data = []
     for instance in tqdm(scirex_reader) :
+        if abstract and instance['paragraph_num'] not in [0, 1] :
+            continue
         scierc_data.append(convert_scirex_instance_to_scierc_format(instance))
 
     num_relations = 0
@@ -90,5 +93,6 @@ if __name__ == "__main__":
     for key in ['train', 'dev', 'test'] :
         convert_scirex_to_scierc_format(
             os.path.join(args.input_dir, key + '.jsonl'), 
-            os.path.join(args.output_dir, key + '.jsonl')
+            os.path.join(args.output_dir, key + '.jsonl'),
+            args.abstract if key in ['train', 'dev'] else False
         )

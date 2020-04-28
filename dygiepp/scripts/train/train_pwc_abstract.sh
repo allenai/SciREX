@@ -2,8 +2,8 @@
 # Usage: bash scripts/train/train_scierc.sh [gpu-id]
 # gpu-id can be an integer GPU ID, or -1 for CPU.
 
-experiment_name="scirex_data"
-data_root="../scirex_dataset/release_data_in_scierc_format/"
+experiment_name="scirex_data_abstract"
+data_root="../scirex_dataset/release_data_in_scierc_format_abstracts_only/"
 config_file="./training_config/scirex_working_example.jsonnet"
 cuda_device=$1
 

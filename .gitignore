@@ -118,6 +118,7 @@ scibert/
 scirex_dataset/all_data
 scirex_dataset/release_data
 scirex_dataset/release_data_in_scierc_format
+scirex_dataset/release_data_in_scierc_format_abstracts_only
 !scirex_dataset/release_data.tar.gz
 
 tmp*

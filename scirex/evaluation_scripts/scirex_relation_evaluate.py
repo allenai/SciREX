@@ -1,5 +1,5 @@
 import argparse
-from itertools import combinations, product
+from itertools import combinations
 from typing import Dict
 
 import pandas as pd
@@ -16,13 +16,7 @@ parser.add_argument("--clusters-file")
 parser.add_argument("--relations-file")
 
 def has_all_mentions(doc, relation):
-    has_mentions = True
-    for e in used_entities:
-        if e != "Method":
-            has_mentions = has_mentions and (len(doc["clusters"][relation[e]]) > 0)
-        else:
-            has_mentions = has_mentions and (len(doc["clusters"][relation[e]]) > 0)
-
+    has_mentions = all(len(doc["clusters"][x[1]]) > 0 for x in relation)
     return has_mentions
 
 
@@ -74,17 +68,6 @@ def get_types_of_clusters(predicted_ner, predicted_clusters):
             predicted_clusters[doc_id]["types"][c] = list(types)[0]
 
 
-def are_they_same(pr, gr, types=used_entities):
-    same = True
-    for e in types:
-        if e != "Method":
-            same = same and (pr[e] == gr[e])
-        else:
-            same = same and (pr[e] == gr[e])
-
-    return 1 if same else 0
-
-
 def main(args):
     gold_data = load_jsonl(args.gold_file)
     for d in gold_data:
@@ -107,7 +90,7 @@ def main(args):
         gold_data, predicted_salient_clusters, predicted_span_to_gold_span_map
     )
 
-    for n in [2, 4] :
+    for n in [1, 2, 4] :
         all_metrics = []
         for types in combinations(used_entities, n):
             for doc in gold_data:
@@ -121,21 +104,16 @@ def main(args):
                 ]))
 
                 relations = [dict(zip(used_entities, x)) for x in relations]
+                relations = set([tuple((t, x[t]) for t in types) for x in relations])
 
-                gold_relations = [x for x in doc['n_ary_relations'] if has_all_mentions(doc, x)]
+                gold_relations = [tuple((t, x[t]) for t in types) for x in doc['n_ary_relations']]
+                gold_relations = set([x for x in gold_relations if has_all_mentions(doc, x)])
 
-                matched_predicted = []
-                matched_gold = []
-                for pr, gr in product(relations, gold_relations):
-                    if are_they_same(pr, gr, types):
-                        if gr not in matched_gold:
-                            matched_gold.append(gr)
-                        if pr not in matched_predicted:
-                            matched_predicted.append(pr)
+                matched = relations & gold_relations
 
                 metrics = {
-                    "p": len(matched_predicted) / (len(relations) + 1e-7),
-                    "r": len(matched_gold) / (len(gold_relations) + 1e-7),
+                    "p": len(matched) / (len(relations) + 1e-7),
+                    "r": len(matched) / (len(gold_relations) + 1e-7),
                 }
                 metrics["f1"] = 2 * metrics["p"] * metrics["r"] / (metrics["p"] + metrics["r"] + 1e-7)
 
@@ -144,7 +122,7 @@ def main(args):
 
         all_metrics = pd.DataFrame(all_metrics)
         print(f"Relation Metrics n={n}")
-        print(all_metrics.describe().loc['mean'])
+        print(all_metrics.describe().loc['mean'][['p', 'r', 'f1']])
 
 
 if __name__ == "__main__":
