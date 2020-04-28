@@ -416,7 +416,7 @@ class ScirexModel(Model):
             self._loss_weights["ner"] * nan_to_zero(metrics_ner.get("ner_f1-measure", 0))
             + self._loss_weights["saliency"] * nan_to_zero(metrics_saliency.get("span_f1", 0))
             + self._loss_weights["n_ary_relation"]
-            * nan_to_zero(metrics_n_ary.get("n_ary_rel_global_macro-avg.f1-score", 0))
+            * nan_to_zero(metrics_n_ary.get("n_ary_rel_global_1.f1-score", 0))
         )
 
         self._display_metrics.append("validation_metric")

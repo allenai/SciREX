@@ -353,7 +353,10 @@ class DyGIE(Model):
         # TODO(dwadden) which things are already decoded?
         res = {}
         if self._loss_weights["coref"] > 0:
-            res["coref"] = self._coref.decode(output_dict["coref"])
+            try :
+                res["coref"] = self._coref.decode(output_dict["coref"])
+            except :
+                pass
         if self._loss_weights["ner"] > 0:
             res["ner"] = self._ner.decode(output_dict["ner"])
         if self._loss_weights["relation"] > 0:

@@ -14,7 +14,7 @@ def map_predicted_spans_to_gold(predicted_spans: List[tuple], gold_spans: List[t
     for p in predicted_spans:
         predicted_to_gold[(p[0], p[1])] = (p[0], p[1])
         for g in gold_spans:
-            if span_match((p[0], p[1]), (g[0], g[1])) > 0.5: # and p[-1] == g[-1]:
+            if span_match((p[0], p[1]), (g[0], g[1])) > 0.5:
                 predicted_to_gold[(p[0], p[1])] = (g[0], g[1])
                 break
 

@@ -6,10 +6,10 @@ then
     mkdir "./predictions"
 fi
 
-data_root="../model_data/pwc_split_on_sectioned/scierc_format_all/"
+data_root="../scirex_dataset/release_data_in_scierc_format/"
 
 python ./dygie/commands/predict_dygie.py \
-    ./models/pwc/model.tar.gz \
-    ./$data_root/dev.jsonl \
-    ./predictions/scierc_pwc_dev_all.jsonl \
-    $CUDA_DEVICE
+    $model \
+    ./$data_root/test.jsonl \
+    ./predictions/$2 \
+    $1
