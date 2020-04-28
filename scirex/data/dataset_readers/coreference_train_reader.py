@@ -8,7 +8,6 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import Field, LabelField, MetadataField, TextField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
-from allennlp.data.tokenizers import SpacyTokenizer as WordTokenizer
 from allennlp.data.tokenizers import Token, Tokenizer
 from overrides import overrides
 
@@ -26,7 +25,7 @@ class ScirexCoreferenceTrainReader(DatasetReader):
     ) -> None:
         super().__init__(lazy)
         self._sample_train = sample_train
-        self._tokenizer = tokenizer or WordTokenizer()
+        self._tokenizer = tokenizer
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
 
     @overrides

@@ -6,11 +6,11 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import (
     ListField,
     MetadataField,
-    MultiLabelField,
     SequenceLabelField,
     SpanField,
     TextField,
 )
+from scirex.data.dataset_readers.multi_label_field import MultiLabelField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import TokenIndexer
 from allennlp.data.tokenizers import Token
@@ -370,7 +370,7 @@ class ScirexFullReader(DatasetReader):
             span_saliency_labels.append(1 if label[-1] == "True" else 0)
             span_type_labels.append(label[0])
             span_features.append(
-                MultiLabelField(entities_to_features_map[(s, e)], label_namespace="section_feature_labels")
+                MultiLabelField(entities_to_features_map[(s, e)], label_namespace="section_feature_labels", num_labels=5)
             )
 
         if len(spans) > 0:
@@ -394,7 +394,7 @@ class ScirexFullReader(DatasetReader):
                         num_labels=len(cluster_name_to_id),
                     )
                 ]
-            ).empty_field()
+            ) #.empty_field()
             fields["span_saliency_labels"] = SequenceLabelField(
                 [0], fields["spans"], label_namespace="span_saliency_labels"
             )
@@ -402,7 +402,7 @@ class ScirexFullReader(DatasetReader):
                 ["Method"], fields["spans"], label_namespace="span_type_labels"
             )
             fields["span_features"] = ListField(
-                [MultiLabelField([], label_namespace="section_feature_labels")]
+                [MultiLabelField([], label_namespace="section_feature_labels", num_labels=5)]
             )
 
         if len(relation_to_cluster_ids) > 0:

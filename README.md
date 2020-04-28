@@ -26,7 +26,14 @@ EntityName = str
 
 <hr>
 
-Training a Model
+Installation
+============
+
+1. `conda create -n scirex python=3.7`
+2. `pip install -r requirements.txt`
+3. `python -m spacy download en`
+
+Training Scirex baseline Model
 =================
 
 1. Extract the dataset files in folder `tar -xvzf scirex_dataset/release_data.tar.gz scirex_data/release_data`
