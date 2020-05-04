@@ -14,11 +14,11 @@ Each file contains one document per line in format  -
     "sections" : List[Span],
     "ner" : List[TypedMention],
     "coref" : Dict[EntityName, List[Span]],
-    "n_ary_subrelations" : Dict[EntityType, EntityName],
+    "n_ary_relations" : Dict[EntityType, EntityName],
     "method_subrelations" : Dict[EntityName, List[Tuple[Span, SubEntityName]]]
 }
 
-Span = Tuple[int, int]
+Span = Tuple[int, int] # Inclusive start and Exclusive end index
 TypedMention = Tuple[int, int, EntityType]
 EntityType = Union["Method", "Metric", "Task", "Material"]
 EntityName = str
