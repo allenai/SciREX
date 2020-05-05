@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+
+<head>
+    <title>SciREX Browser</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
+        integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+        integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"
+        integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6"
+        crossorigin="anonymous"></script>
+
+    <style>
+        .Material {
+            background-color: #9fc5e8;
+        }
+
+        .Method {
+            background-color: #d5a6bd;
+        }
+
+        .Task {
+            background-color: #ffe599;
+        }
+
+        .Metric {
+            background-color: #b6d7a8;
+        }
+
+        .cluster {
+            font-weight: bold;
+        }
+
+    </style>
+</head>
+
+<body>
+    <div class='container'>
+        <div class="row header">
+            <h1>SciREX browser</h1>
+        </div>
+        <div class="row header">
+            <form class="form-inline">
+                <div class="form-group col-auto">
+                    <select class="form-control custom-select" id="paperselector">
+                        <option selected>Select Paper ...</option>
+                    </select>
+                </div>
+                <button type="button" class="btn btn-primary col-auto" id="paperform">Submit</button>
+            </form>
+            
+        </div>
+
+        <br/>
+        <div id="relation-shower" class="row header">
+            <h4>Relations (Click on any entity in relation below and mentions of that entity will be bolded in text)</h4>
+            <ul class="list-group" id="relations-list">
+            </ul>
+        </div>
+        <div class="row">
+            <div id="text-container"></div>
+        </div>
+        
+
+        </div>
+    <script type='text/javascript'>
+        $(document).ready(function () {
+            $.ajax({
+                url: 'doc_ids.txt',
+                dataType: "json",
+                mimeType: "application/json",
+                success: function (data) {
+                    data['doc_ids'].forEach(element => {
+                        $("#paperselector").append("<option value='" + element + "'>" + element + '</option>');
+                    });
+                }
+            });
+            $("#paperform").click(function () {
+                var paper = $("#paperselector").val();
+                var json_url = 'train_docs/' + paper + '.json';
+                var entity_types = ["Material", "Task", "Method", "Metric"];
+                $.ajax({
+                    url: json_url,
+                    dataType: "json",
+                    mimeType: "application/json",
+                    success: function (data) {
+                        var words = data["words"];
+                        var sections = data["sections"];
+                        var ner = data["ner"];
+                        ner.forEach(element => {
+                            words[element[0]] = "<span class='" + element[2] + "' id='span-" + element[0] + "-" + element[1] + "'>" + words[element[0]]
+                            words[element[1] - 1] = words[element[1] - 1] + '</span>'
+                        });
+
+                        var clusters = data['coref'];
+
+                        sections.forEach(element => {
+                            words[element[0]] = '<br/><br/>' + words[element[0]]
+                        });
+                        $("#text-container").html(words.join(" "));
+
+                        var relations = data["n_ary_relations"];
+                        var subrelations = data["method_subrelations"];
+                        console.log(subrelations);
+                        $("#relations-list").empty();
+                        relations.forEach((element, index) => {
+                            $("#relations-list").append('<ul class="list-group list-group-horizontal" id="relation-' + index + '"></ul>');
+                            entity_types.map(function (e) {
+                                $("#relation-" + index).append('<li class="flex-fill list-group-item ' + e + '" id="' + e + index + '">' + element[e] + '</li>');
+                                $("#" + e + index).click(function () {
+                                    $(".cluster").removeClass('cluster');
+                                    var name = $("#" + e + index).text();
+                                    var spans = clusters[name];
+                                    $("#" + e + index).addClass("cluster");
+                                    spans.forEach(element => {
+                                        $("#span-" + element[0] + "-" + element[1]).addClass('cluster');
+                                    });
+
+                                    if (name in subrelations){
+                                        console.log(subrelations[name]);
+                                        subrelations[name].forEach(element => {
+                                            var subname = element[1];
+                                            var spans = clusters[name];
+                                            spans.forEach(element => {
+                                                $("#span-" + element[0] + "-" + element[1]).addClass('cluster');
+                                            });
+                                        })
+                                    }
+                                });
+                            })
+                        });
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+
+
+
+</html>
