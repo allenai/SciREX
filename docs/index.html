@@ -129,7 +129,7 @@
                                         console.log(subrelations[name]);
                                         subrelations[name].forEach(element => {
                                             var subname = element[1];
-                                            var spans = clusters[name];
+                                            var spans = clusters[subname];
                                             spans.forEach(element => {
                                                 $("#span-" + element[0] + "-" + element[1]).addClass('cluster');
                                             });
