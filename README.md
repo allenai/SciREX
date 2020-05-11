@@ -34,7 +34,7 @@ Installation
 2. `pip install -r requirements.txt`
 3. `python -m spacy download en`
 
-Training Scirex baseline Model
+Training SciREX baseline Model
 =================
 
 1. Extract the dataset files in folder `tar -xvzf scirex_dataset/release_data.tar.gz scirex_data/release_data`
