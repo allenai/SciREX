@@ -44,7 +44,6 @@ Training SciREX baseline Model
 Generating Predictions
 ======================
 
-1. 
 
 ```bash
 scirex_archive=outputs/pwc_outputs/experiment_scirex_full/main \
