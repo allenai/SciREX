@@ -51,3 +51,19 @@ scirex_coreference_archive=outputs/pwc_outputs/experiment_pairwise_coreference/m
 cuda_device=<cuda-device-num> \
 bash scirex/commands/predict_scirex_model.sh
 ```
+
+Citation
+========
+
+```bibtex
+@article{jain-etal-2020-scirex,
+  title={SciREX: A Challenge Dataset for Document-Level Information Extraction},
+  author={Sarthak Jain and Madeleine van Zuylen and Hannaneh Hajishirzi and Iz Beltagy},
+  booktitle = "Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics",
+  month={jul},
+  year={2020},
+  eprint={2005.00512},
+  archivePrefix={arXiv},
+  primaryClass={cs.CL}
+}
+```
