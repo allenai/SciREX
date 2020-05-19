@@ -29,21 +29,25 @@ class DoctaetModel(Model):
         self.bert_model = bert_model.bert_model
 
         self._label_namespace = label_namespace
-        print(list(self.vocab._retained_counter["labels"].items()))
-
         label_vocab = self.vocab.get_index_to_token_vocabulary('labels')
 
-        total_size = sum(self.vocab._retained_counter['labels'].values())
-        self._class_weight = [0] * len(label_vocab)
-        for i, t in label_vocab.items() :
-            self._class_weight[i] = total_size / self.vocab._retained_counter['labels'][t]
+        try :
+            print(list(self.vocab._retained_counter["labels"].items()))
+
+            total_size = sum(self.vocab._retained_counter['labels'].values())
+            self._class_weight = [0] * len(label_vocab)
+            for i, t in label_vocab.items() :
+                self._class_weight[i] = total_size / self.vocab._retained_counter['labels'][t]
+        except :
+            self._class_weight = [1.0] * len(label_vocab)
+
         
         self._dropout = torch.nn.Dropout(p=dropout)
         self._pos_index = self.vocab.get_token_to_index_vocabulary(label_namespace)['True']
 
         self._classification_layer = aggregate_feedforward
-        self._loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(self._class_weight))
         self._index = index
+        self._loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(self._class_weight))
 
         self._f1 = BinaryThresholdF1()
 

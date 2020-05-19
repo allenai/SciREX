@@ -90,7 +90,7 @@ def main(args):
         gold_data, predicted_salient_clusters, predicted_span_to_gold_span_map
     )
 
-    for n in [1, 2, 4] :
+    for n in [2, 4] :
         all_metrics = []
         for types in combinations(used_entities, n):
             for doc in gold_data:

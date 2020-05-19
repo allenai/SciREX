@@ -125,4 +125,5 @@ tmp*
 test_*_predictions*.jsonl
 src/
 
+!docs/train_docs/*.json
 TODO.md

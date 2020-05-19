@@ -28,12 +28,16 @@ def combine_span_and_cluster_file(span_file, cluster_file) :
         if 'clusters' in clusters[doc['doc_id']] :
             doc['coref'] = clusters[doc['doc_id']]['clusters']
         else :
-            merge_method_subrelations(doc)
+            merge_method_subrelations(clusters[doc['doc_id']])
             doc['coref'] = {x: v for x, v in clusters[doc['doc_id']]['coref'].items() if len(v) > 0}
 
         if 'n_ary_relations' in doc:
             del doc['n_ary_relations']
 
+        if 'method_subrelations' in doc :
+            del doc['method_subrelations']
+
+       
     annotations_to_jsonl(spans, 'tmp_relation_42424242.jsonl')
 
 
