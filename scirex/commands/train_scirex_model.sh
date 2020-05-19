@@ -21,4 +21,7 @@ export TEST_PATH=$DATA_BASE_PATH/test.jsonl
 
 export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_scirex_full/$1}
 
+export bert_fine_tune=10,11,pooler
+
+nw=1 lw=1 rw=1 em=false \
 allennlp train -s $OUTPUT_BASE_PATH --include-package scirex $RECOVER $CONFIG_FILE

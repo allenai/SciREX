@@ -37,7 +37,7 @@ Installation
 Training SciREX baseline Model
 =================
 
-1. Extract the dataset files in folder `tar -xvzf scirex_dataset/release_data.tar.gz scirex_data/release_data`
+1. Extract the dataset files in folder `tar -xvzf scirex_dataset/release_data.tar.gz --directory scirex_dataset`
 2. Run `CUDA_DEVICE=<cuda-device-num> bash scirex/commands/train_scirex_model.sh main` to train main scirex model
 3. Run `CUDA_DEVICE=<cuda-device-num> bash scirex/commands/train_pairwise_coreference.sh main` to train secondary coreference model.
 
