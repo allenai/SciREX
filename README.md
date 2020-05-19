@@ -48,6 +48,6 @@ Generating Predictions
 ```bash
 scirex_archive=outputs/pwc_outputs/experiment_scirex_full/main \
 scirex_coreference_archive=outputs/pwc_outputs/experiment_pairwise_coreference/main \
-cude_device=<cuda-device-num> \
+cuda_device=<cuda-device-num> \
 bash scirex/commands/predict_scirex_model.sh
 ```
