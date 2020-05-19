@@ -24,4 +24,5 @@ export OUTPUT_BASE_PATH=${OUTPUT_DIR:-outputs/pwc_outputs/experiment_scirex_full
 export bert_fine_tune=10,11,pooler
 
 nw=1 lw=1 rw=1 em=false \
+relation_cardinality=4 \
 allennlp train -s $OUTPUT_BASE_PATH --include-package scirex $RECOVER $CONFIG_FILE
