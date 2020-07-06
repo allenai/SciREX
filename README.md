@@ -25,7 +25,7 @@ EntityType = Union["Method", "Metric", "Task", "Material"]
 EntityName = str
 ```
 
-A note of concern: Further analysis of our dataset revealed that ~50% of relations contain atleast one entity with no mentions in the paper (they occur in tables which we have discarded from our dataset). This makes evaluation of end to end task difficult (no predicted cluster can match that gold cluster). Currently, we remove these relations during evaluation for the end to end task. 
+A note of concern: Further analysis of our dataset revealed that ~50% of relations contain atleast one entity with no mentions in the paper (they occur in tables which we have discarded from our dataset). This makes evaluation of end to end task difficult (no predicted cluster can match that gold cluster). Currently, we remove these relations during evaluation for the end to end task (https://github.com/allenai/SciREX/blob/master/scirex/evaluation_scripts/scirex_relation_evaluate.py#L110). Note that this artifically reduces the precision of our model.
 
 <hr>
 
