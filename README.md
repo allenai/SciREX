@@ -25,6 +25,8 @@ EntityType = Union["Method", "Metric", "Task", "Material"]
 EntityName = str
 ```
 
+A note of concern: Further analysis of our dataset revealed that ~50% of relations contain atleast one entity with no mentions in the paper (they occur in tables which we have discarded from our dataset). This makes evaluation of end to end task difficult (no predicted cluster can match that gold cluster). Currently, we remove these relations during evaluation for the end to end task. 
+
 <hr>
 
 Installation
