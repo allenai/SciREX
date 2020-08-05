@@ -4,8 +4,8 @@ if [ $# -eq  0 ]
     exit 1
 fi
 
-export BERT_VOCAB=$BERT_BASE_FOLDER/scivocab_uncased.vocab
-export BERT_WEIGHTS=$BERT_BASE_FOLDER/scibert_scivocab_uncased.tar.gz
+export BERT_VOCAB=$BERT_BASE_FOLDER/vocab.txt
+export BERT_WEIGHTS=$BERT_BASE_FOLDER/weights.tar.gz
 
 export CONFIG_FILE=scirex/training_config/pairwise_coreference.jsonnet
 
