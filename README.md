@@ -40,6 +40,7 @@ Training SciREX baseline Model
 =================
 
 1. Extract the dataset files in folder `tar -xvzf scirex_dataset/release_data.tar.gz --directory scirex_dataset`
+2. Export path to scibert `export BERT_BASE_FOLDER=<path-to-scibert>` . This path should contain two files atleast - vocab.txt and weights.tar.gz. Download the file here https://s3-us-west-2.amazonaws.com/ai2-s2-research/scibert/pytorch_models/scibert_scivocab_uncased.tar and untar it.
 2. Run `CUDA_DEVICE=<cuda-device-num> bash scirex/commands/train_scirex_model.sh main` to train main scirex model
 3. Run `CUDA_DEVICE=<cuda-device-num> bash scirex/commands/train_pairwise_coreference.sh main` to train secondary coreference model.
 
