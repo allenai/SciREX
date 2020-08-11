@@ -120,9 +120,12 @@ class MultiLabelField(Field[torch.Tensor]):
 
     @overrides
     def as_tensor(self, padding_lengths: Dict[str, int]) -> torch.Tensor:
-        tensor = torch.zeros(self._num_labels, dtype=torch.long)  # vector of zeros
-        if self._label_ids:
-            tensor.scatter_(0, torch.LongTensor(self._label_ids), 1)
+        try :
+            tensor = torch.zeros(self._num_labels, dtype=torch.long)  # vector of zeros
+            if self._label_ids:
+                tensor.scatter_(0, torch.LongTensor(self._label_ids), torch.ones(len(self._label_ids), dtype=torch.long))
+        except :
+            breakpoint()
 
         return tensor
 
