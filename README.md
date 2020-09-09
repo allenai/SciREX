@@ -35,6 +35,7 @@ Installation
 1. `conda create -n scirex python=3.7`
 2. `pip install -r requirements.txt`
 3. `python -m spacy download en`
+4. Please set the `PYTHONPATH` env variable to root of this repository.
 
 Training SciREX baseline Model
 =================
@@ -50,7 +51,7 @@ Generating Predictions
 
 ```bash
 scirex_archive=outputs/pwc_outputs/experiment_scirex_full/main \
-scirex_coreference_archive=outputs/pwc_outputs/experiment_pairwise_coreference/main \
+scirex_coreference_archive=outputs/pwc_outputs/experiment_coreference/main \
 cuda_device=<cuda-device-num> \
 bash scirex/commands/predict_scirex_model.sh
 ```
