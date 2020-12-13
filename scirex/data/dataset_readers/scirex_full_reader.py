@@ -31,7 +31,7 @@ EntityType = Tuple[str, str]  # eg. (Method, True)
 
 def clean_json_dict(json_dict):
     # Get fields from JSON dict
-    entities: List[Tuple[int, int, BaseEntityType]] = json_dict["ner"]
+    entities: List[Tuple[int, int, BaseEntityType]] = json_dict.get("ner", [])
     # Convert Entities to dictionary {(s, e) -> type}
     entities = sorted(entities, key=lambda x: (x[0], x[1]))
     entities: Dict[Span, BaseEntityType] = OrderedDict([((s, e), t) for s, e, t in entities])
