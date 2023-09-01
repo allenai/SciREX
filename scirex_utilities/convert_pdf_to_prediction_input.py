@@ -32,7 +32,7 @@ def main(args):
     print("--------------------------")
     # 1- parse grobid text
     print("parse by grobid ..")
-    parse_by_grobid(input_dir, doc_id, output_dir)
+    parse_by_grobid(input_dir, doc_id, input_dir)
 
     # 2- extract text from grobid
     print("Process the output from grobid")

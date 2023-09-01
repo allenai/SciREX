@@ -127,3 +127,5 @@ src/
 
 !docs/train_docs/*.json
 TODO.md
+
+.idea

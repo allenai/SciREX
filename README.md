@@ -56,6 +56,27 @@ cuda_device=<cuda-device-num> \
 bash scirex/commands/predict_scirex_model.sh
 ```
 
+Generating Predictions for a pdf without gold data
+===================================================
+
+1. Convert PDF to the prediction formate
+```bash
+python -m scirex_utilities.convert_pdf_to_prediction_input \
+</input/pdf/dir> \
+</output/dir> \
+<doc_id_the_same_as_pdf_name>
+```
+
+2. run the following command
+```bash
+test_file=</path/of/json/output/from/previous/step> \
+test_output_folder=</path/of/output/folder> \
+scirex_archive=outputs/pwc_outputs/experiment_scirex_full/main \
+scirex_coreference_archive=outputs/pwc_outputs/experiment_coreference/main \
+cuda_device=<cuda-device-num>  \
+bash scirex/commands/predict_external_pdf_paper.sh 
+```
+
 Citation
 ========
 
