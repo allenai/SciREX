@@ -5,9 +5,9 @@ import click
 import pandas as pd
 import spacy
 
-nlp = spacy.load('en')
+nlp = spacy.load('en_core_web_sm')
 
-def convert_to_sentences(doc_id, text, clean_type) :
+def convert_to_sentences(doc_id, text) :
     json_sents = []
     sent_id = 0
     # Divide into sections and then paragraphs
