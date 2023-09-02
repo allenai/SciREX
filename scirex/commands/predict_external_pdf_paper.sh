@@ -36,7 +36,15 @@ python scirex/predictors/predict_n_ary_relations.py \
 $scirex_archive \
 $test_output_folder/ner_predictions.jsonl \
 $test_output_folder/salient_clusters_predictions.jsonl \
-$test_output_folder/relations_predictions_with_graph_embeddings_e2e.jsonl \
+$test_output_folder/relations_predictions.jsonl \
 $cuda_device
+
+echo "Resolve Predicted Relations"
+python scirex_utilities/resolve_predicted_entities_to_phrases.py \
+$test_output_folder/ner_predictions.jsonl \
+$test_output_folder/cluster_predictions.jsonl \
+$test_output_folder/relations_predictions.jsonl \
+$test_output_folder/resolved_predicted_relations.jsonl \
+$paper_id
 
 
