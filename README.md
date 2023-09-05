@@ -71,6 +71,7 @@ python -m scirex_utilities.convert_pdf_to_prediction_input \
 ```bash
 test_file=</path/of/json/output/from/previous/step> \
 test_output_folder=</path/of/output/folder> \
+paper_id=<paper_id_from_previous_step> \
 scirex_archive=outputs/pwc_outputs/experiment_scirex_full/main \
 scirex_coreference_archive=outputs/pwc_outputs/experiment_coreference/main \
 cuda_device=<cuda-device-num>  \
