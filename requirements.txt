@@ -3,7 +3,7 @@ overrides==1.9
 numpy==1.16.4
 pandas==0.24.2
 scripts==2.0
-scikit_learn==0.21.3
+scikit_learn==1.5.0
 typing==3.7.4
 pandas==0.24.2
 Click==7.0
