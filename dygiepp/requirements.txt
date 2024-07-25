@@ -2,7 +2,7 @@
 
 # Modeling
 
-torch==1.2.0
+torch==2.2.0
 allennlp==0.9.0
 
 
